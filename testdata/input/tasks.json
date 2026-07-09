@@ -1,0 +1,18 @@
+[
+  {"task_id": "t01", "prompt": "What is the capital city of Australia?"},
+  {"task_id": "t02", "prompt": "Explain how photosynthesis works in simple terms."},
+  {"task_id": "t03", "prompt": "A store sells a jacket for $120. If there is a 25% discount, what is the final price?"},
+  {"task_id": "t04", "prompt": "A company had revenue of $500,000 last year and expects 15% growth this year. What is the projected revenue?"},
+  {"task_id": "t05", "prompt": "Classify the sentiment of this review: 'The food was terrible and the service was rude.'"},
+  {"task_id": "t06", "prompt": "What is the overall sentiment of this tweet: 'I absolutely love the new update! Best app ever!'"},
+  {"task_id": "t07", "prompt": "Summarize the following article in 2 sentences: The global economy has faced significant challenges over the past decade. Rising inflation, supply chain disruptions caused by the pandemic, and geopolitical tensions have all contributed to economic instability. Central banks around the world have responded with a combination of interest rate adjustments and quantitative easing measures."},
+  {"task_id": "t08", "prompt": "Give me the TL;DR of this text: Remote work has fundamentally reshaped the modern workplace since the pandemic forced companies worldwide to adopt distributed working models almost overnight. Studies show that productivity has largely been maintained or even improved for knowledge workers, while employees report higher satisfaction due to eliminated commutes and greater flexibility."},
+  {"task_id": "t09", "prompt": "Extract all named entities from the following text and return them as JSON with fields for persons, organizations, and locations: 'Apple Inc. was founded by Steve Jobs in Cupertino, California in 1976.'"},
+  {"task_id": "t10", "prompt": "Identify all people, companies, and places mentioned: 'Elon Musk announced that Tesla will build a new factory in Berlin, Germany, partnering with Volkswagen.'"},
+  {"task_id": "t11", "prompt": "This Python function has a bug, fix it:\ndef divide(a, b):\n    return a / b\nresult = divide(10, 0)\nprint(result)"},
+  {"task_id": "t12", "prompt": "Find the bug in this recursive function:\ndef factorial(n):\n    if n == 1:\n        return 1\n    return n * factorial(n)\nIt causes infinite recursion."},
+  {"task_id": "t13", "prompt": "Write a Python function that returns the second largest value in a list of integers."},
+  {"task_id": "t14", "prompt": "Write a function to check if a given string is a palindrome, ignoring spaces and punctuation."},
+  {"task_id": "t15", "prompt": "Five people — Alice, Bob, Carol, Dave, and Eve — are seated in a row. Alice is not next to Bob. Carol is immediately to the left of Dave. Eve is either first or last. Bob is not in position 3. Who is in position 2?"},
+  {"task_id": "t16", "prompt": "If it is raining, then the ground is wet. The ground is not wet. Therefore, is it raining? Answer yes or no and explain why."}
+]

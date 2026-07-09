@@ -1,0 +1,9 @@
+.env
+.env.*
+.git
+.gitignore
+testdata/
+output/
+track1-agent
+*.json
+!testdata/input/tasks.json
