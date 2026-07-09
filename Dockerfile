@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o track1-agent ./main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o track1-agent .
 
 # Runtime stage — no Ollama, no local model. Pure deterministic + Fireworks.
 FROM debian:bookworm-slim
@@ -17,5 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY --from=builder /app/track1-agent .
+RUN chmod +x /app/track1-agent
 
-ENTRYPOINT ["/app/track1-agent"]
+CMD ["/app/track1-agent"]

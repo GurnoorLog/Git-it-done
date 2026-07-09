@@ -268,29 +268,46 @@ func (r *Router) BatchProcess(ctx context.Context, tasks []task.Task, cat classi
 	return results
 }
 
-var batchAnswerRe = regexp.MustCompile(`(?i)Task\s+(\d+)\s*:\s*(.*?)(?=\n\s*Task\s+\d+\s*:|\z)`)
+var batchTaskRe = regexp.MustCompile(`(?i)^\s*Task\s+(\d+)\s*:\s*`) // matches "Task N: " at line start
+var reNewline = regexp.MustCompile(`\r?\n`)
 
-// parseBatchAnswers returns answers indexed by task number (1-based).
-// Missing answers are zero-valued strings.
+// parseBatchAnswers returns answers indexed by position (0-based).
+// It finds all "Task N:" headers, then extracts the content until the next
+// header or end of string.
 func parseBatchAnswers(raw string) []string {
-	numMap := make(map[int]string)
-	for _, m := range batchAnswerRe.FindAllStringSubmatch(raw, -1) {
-		if len(m) >= 3 {
+	lines := reNewline.Split(raw, -1)
+	taskLines := make(map[int][]string)
+	var currentTask int
+	var inAnswer bool
+	for _, line := range lines {
+		if m := batchTaskRe.FindStringSubmatch(line); len(m) >= 2 {
 			if n, err := strconv.Atoi(m[1]); err == nil {
-				numMap[n] = strings.TrimSpace(m[2])
+				currentTask = n
+				inAnswer = true
+				rest := strings.TrimSpace(batchTaskRe.ReplaceAllString(line, ""))
+				if rest != "" {
+					taskLines[currentTask] = append(taskLines[currentTask], rest)
+				}
+				continue
 			}
 		}
+		if inAnswer && currentTask > 0 {
+			taskLines[currentTask] = append(taskLines[currentTask], line)
+		}
 	}
-	// Find the highest task number so we know the slice length.
+	if len(taskLines) == 0 {
+		return nil
+	}
 	maxN := 0
-	for n := range numMap {
+	for n := range taskLines {
 		if n > maxN {
 			maxN = n
 		}
 	}
 	result := make([]string, maxN)
-	for n, ans := range numMap {
-		result[n-1] = ans
+	for n, lines := range taskLines {
+		answer := strings.TrimSpace(strings.Join(lines, "\n"))
+		result[n-1] = answer
 	}
 	return result
 }
