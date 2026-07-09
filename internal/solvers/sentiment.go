@@ -66,16 +66,23 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 
 	var posScore, negScore float64
 	var posHits, negHits []string
+	beforeContrast := 0.0
+	afterContrastPos, afterContrastNeg := 0.0, 0.0
 	inContrast := false
-	clausePos, clauseNeg := 0.0, 0.0
+	negateNext := false
 
 	for i, w := range words {
 		if contrastWords[w] {
-			// Apply contrast multiplier to previous clause scores
-			posScore += clausePos * 0.5 // first clause gets normal weight
-			negScore += clauseNeg * 0.5
-			clausePos, clauseNeg = 0, 0
+			// Store pre-contrast scores and reset for after-contrast
+			beforeContrast = posScore + negScore
+			posScore, negScore = 0, 0
 			inContrast = true
+			negateNext = false
+			continue
+		}
+
+		if negators[w] {
+			negateNext = !negateNext
 			continue
 		}
 
@@ -85,15 +92,19 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 				multiplier = m
 			}
 		}
-		negated := i > 0 && negators[words[i-1]]
-		if negated {
+		if negateNext {
 			multiplier *= -1
+			negateNext = false
 		}
 
 		switch {
 		case positiveWords[w]:
 			score := 1.0 * multiplier
-			clausePos += score
+			if inContrast {
+				afterContrastPos += score
+			} else {
+				posScore += score
+			}
 			if multiplier > 0 {
 				posHits = append(posHits, w)
 			} else {
@@ -101,7 +112,11 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 			}
 		case negativeWords[w]:
 			score := 1.0 * multiplier
-			clauseNeg += score
+			if inContrast {
+				afterContrastNeg += score
+			} else {
+				negScore += score
+			}
 			if multiplier > 0 {
 				negHits = append(negHits, w)
 			} else {
@@ -110,15 +125,14 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 		}
 	}
 
-	// Apply contrast multiplier: the clause AFTER the contrast word gets 2x weight
-	if inContrast {
-		posScore += clausePos * 0.5
-		negScore += clauseNeg * 0.5
-		posScore += clausePos * 1.0
-		negScore += clauseNeg * 1.0
+	// After contrast, the post-contrast clause gets 2x weight
+	if inContrast && beforeContrast > 0 {
+		// The contrast clause after "but" gets 2x
+		posScore += afterContrastPos * 2.0
+		negScore += afterContrastNeg * 2.0
 	} else {
-		posScore += clausePos
-		negScore += clauseNeg
+		posScore += afterContrastPos
+		negScore += afterContrastNeg
 	}
 
 	if posScore > 0 && negScore == 0 {

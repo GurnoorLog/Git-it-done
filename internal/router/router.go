@@ -196,7 +196,8 @@ func (r *Router) BatchProcess(ctx context.Context, tasks []task.Task, cat classi
 		batchSb.WriteString(t.Prompt)
 		batchSb.WriteString("\n\n")
 	}
-	batchSb.WriteString("Now provide your answers in this exact format (no extra text):\n")
+	batchSb.WriteString("Now provide your answers after this line in the exact format shown (no extra text):\n")
+	batchSb.WriteString("=== ANSWERS ===\n")
 	for i := range tasks {
 		batchSb.WriteString("Task ")
 		batchSb.WriteString(strconv.Itoa(i + 1))
@@ -269,17 +270,31 @@ func (r *Router) BatchProcess(ctx context.Context, tasks []task.Task, cat classi
 }
 
 var batchTaskRe = regexp.MustCompile(`(?i)^\s*Task\s+(\d+)\s*:\s*`) // matches "Task N: " at line start
+var reAnswersDelim = regexp.MustCompile(`(?i)^\s*={3,}\s*ANSWERS\s*={3,}\s*`) // matches "=== ANSWERS ==="
 var reNewline = regexp.MustCompile(`\r?\n`)
 
 // parseBatchAnswers returns answers indexed by position (0-based).
-// It finds all "Task N:" headers, then extracts the content until the next
-// header or end of string.
+// It finds the "=== ANSWERS ===" delimiter, then extracts content after each
+// "Task N:" header until the next header or end of string.
 func parseBatchAnswers(raw string) []string {
 	lines := reNewline.Split(raw, -1)
+
+	// Find the ANSWERS delimiter
+	startIdx := -1
+	for i, line := range lines {
+		if reAnswersDelim.MatchString(line) {
+			startIdx = i + 1
+			break
+		}
+	}
+	if startIdx < 0 {
+		return nil
+	}
+
 	taskLines := make(map[int][]string)
 	var currentTask int
 	var inAnswer bool
-	for _, line := range lines {
+	for _, line := range lines[startIdx:] {
 		if m := batchTaskRe.FindStringSubmatch(line); len(m) >= 2 {
 			if n, err := strconv.Atoi(m[1]); err == nil {
 				currentTask = n
@@ -308,6 +323,12 @@ func parseBatchAnswers(raw string) []string {
 	for n, lines := range taskLines {
 		answer := strings.TrimSpace(strings.Join(lines, "\n"))
 		result[n-1] = answer
+	}
+	// Validate all expected answers are non-empty
+	for i := 0; i < len(result); i++ {
+		if result[i] == "" {
+			return nil
+		}
 	}
 	return result
 }

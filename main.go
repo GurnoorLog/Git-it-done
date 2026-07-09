@@ -81,7 +81,7 @@ func run() error {
 			}
 		case classify.CategoryCodeGeneration:
 			if code := solvers.LookupCodeTemplate(t.Prompt); code != "" {
-				if ok, _ := solvers.VerifyCode(context.Background(), code); ok {
+				if ok, _ := solvers.VerifyCode(ctx, code); ok {
 					results[i] = task.Result{TaskID: t.TaskID, Answer: code, ResolutionPath: "deterministic"}
 					resolved = true
 				}
