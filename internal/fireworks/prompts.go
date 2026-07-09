@@ -1,6 +1,8 @@
 package fireworks
 
-import "strings"
+import (
+	"strings"
+)
 
 type CategoryPrompt struct {
 	System  string
@@ -23,21 +25,22 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 	case "sentiment":
 		return CategoryPrompt{
 			System: "You are a sentiment analyst. " + terse + " Your response MUST begin with exactly one word: positive, negative, or neutral. Then a period and a one-sentence reason citing words from the text. Example: 'negative. The author criticizes the slow service and poor food quality.'",
+			Prefill: "",
 		}
 
 	case "ner":
 		if wantsJSON {
 			return CategoryPrompt{
-				System: "You are an expert named-entity extractor. Output ONLY a valid JSON object in exactly the shape the task requests (e.g. {\"persons\":[],\"organizations\":[],\"locations\":[]}). Use exact spans from the text. No text before or after the JSON.",
+				System: "You are an expert named-entity extractor. Output ONLY a valid JSON object in exactly the shape the task requests (e.g. {\"persons\":[],\"organizations\":[],\"locations\":[]}). Use exact spans from the text. No text before or after the JSON. Extract EVERY named entity — do not miss any.",
 			}
 		}
 		return CategoryPrompt{
-			System: "You are an expert named-entity extractor. List every named entity in the text with its type in ONE sentence. Format: 'The text mentions [Name] (person), [Name] (organization), and [Name] (location).' Omit empty categories. Do not miss any entity. " + terse,
+			System: "You are an expert named-entity extractor. List EVERY named entity in the text with its type in ONE sentence. Format: 'The text mentions [Name] (person), [Name] (organization), and [Name] (location).' Omit empty categories. Do not miss any entity. " + terse,
 		}
 
 	case "summarization":
 		return CategoryPrompt{
-			System: "You are a precise summarizer. " + terse + " Read the length/format constraint in the task and follow it EXACTLY: 'two sentences' means exactly 2 sentences; 'under 15 words' means fewer than 15 words; 'three bullet points' means exactly 3 bullets. Use only facts from the source text. Do not add opinions or interpretations.",
+			System: "You are a precise summarizer. " + terse + " Read the length/format constraint in the task and follow it EXACTLY: 'two sentences' means exactly 2 sentences; 'under 15 words' means fewer than 15 words; 'three bullet points' means exactly 3 bullets. Use only facts from the source text. Do not add opinions or interpretations. Count your output before finalizing.",
 		}
 
 	case "code_generation":

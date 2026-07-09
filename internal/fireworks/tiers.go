@@ -120,8 +120,12 @@ func (tm TierMap) SelectModelFallbacks(category string) []string {
 	}
 
 	switch category {
-	// Sentiment/NER/summarization: cheap MoE handles text tasks well.
-	case "sentiment", "ner", "summarization":
+	// Sentiment: needs nuanced understanding — use dense model for accuracy.
+	// Cheap MoE is less reliable on borderline cases.
+	case "sentiment":
+		return collect(TierDense, TierCheap, TierQuantized, TierFlagship, TierCode)
+	// NER/summarization: cheap MoE handles these well.
+	case "ner", "summarization":
 		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
 	// Factual: cheap MoE (gemma-4-26b-a4b-it) — low tokens, sufficient accuracy.
 	case "factual":

@@ -124,6 +124,41 @@ var codeCatalog = []catalogEntry{
         seen[n] = i
     return []`,
 	},
+	{
+		keywords: []string{"maximum", "max", "largest"},
+		code: `def find_max(nums):
+    if not nums:
+        return None
+    max_val = nums[0]
+    for n in nums[1:]:
+        if n > max_val:
+            max_val = n
+    return max_val`,
+	},
+	{
+		keywords: []string{"minimum", "min", "smallest"},
+		code: `def find_min(nums):
+    if not nums:
+        return None
+    min_val = nums[0]
+    for n in nums[1:]:
+        if n < min_val:
+            min_val = n
+    return min_val`,
+	},
+	{
+		keywords: []string{"sort", "array"},
+		code: `def sort_array(nums):
+    return sorted(nums)`,
+	},
+	{
+		keywords: []string{"frequency", "count", "occurrence"},
+		code: `def count_frequencies(nums):
+    freq = {}
+    for n in nums:
+        freq[n] = freq.get(n, 0) + 1
+    return freq`,
+	},
 }
 
 // LookupCodeTemplate checks if a prompt matches a known pattern and returns

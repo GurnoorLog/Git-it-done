@@ -53,7 +53,7 @@ func TestSelectModel(t *testing.T) {
 		category string
 		want     string
 	}{
-		{"sentiment", "gemma-4-26b-a4b-it"},       // Prefers Cheap
+		{"sentiment", "gemma-4-31b-it"},           // Prefers Dense (better accuracy)
 		{"ner", "gemma-4-26b-a4b-it"},             // Prefers Cheap
 		{"summarization", "gemma-4-26b-a4b-it"},   // Prefers Cheap
 		{"factual", "gemma-4-26b-a4b-it"},         // Prefers Cheap

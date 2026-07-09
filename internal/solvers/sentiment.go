@@ -66,15 +66,12 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 
 	var posScore, negScore float64
 	var posHits, negHits []string
-	beforeContrast := 0.0
 	afterContrastPos, afterContrastNeg := 0.0, 0.0
 	inContrast := false
 	negateNext := false
 
 	for i, w := range words {
 		if contrastWords[w] {
-			// Store pre-contrast scores and reset for after-contrast
-			beforeContrast = posScore + negScore
 			posScore, negScore = 0, 0
 			inContrast = true
 			negateNext = false
@@ -86,70 +83,86 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 			continue
 		}
 
-		multiplier := 1.0
+		magnitude := 1.0
 		if i > 0 {
 			if m, ok := intensifiers[words[i-1]]; ok {
-				multiplier = m
+				magnitude = m
 			}
 		}
 		if negateNext {
-			multiplier *= -1
 			negateNext = false
+		} else {
+			// Without negation, the polarity stays as-is
 		}
+		// For negation: positive word → negative bucket, negative word → positive bucket
+		// Without negation: positive word → positive bucket, negative word → negative bucket
 
 		switch {
 		case positiveWords[w]:
-			score := 1.0 * multiplier
-			if inContrast {
-				afterContrastPos += score
-			} else {
-				posScore += score
-			}
-			if multiplier > 0 {
-				posHits = append(posHits, w)
-			} else {
+			if negateNext {
+				// "not good" → negative
+				if inContrast {
+					afterContrastNeg += magnitude
+				} else {
+					negScore += magnitude
+				}
 				negHits = append(negHits, "not "+w)
+			} else {
+				// "good" → positive
+				if inContrast {
+					afterContrastPos += magnitude
+				} else {
+					posScore += magnitude
+				}
+				posHits = append(posHits, w)
 			}
 		case negativeWords[w]:
-			score := 1.0 * multiplier
-			if inContrast {
-				afterContrastNeg += score
-			} else {
-				negScore += score
-			}
-			if multiplier > 0 {
-				negHits = append(negHits, w)
-			} else {
+			if negateNext {
+				// "not bad" → positive
+				if inContrast {
+					afterContrastPos += magnitude
+				} else {
+					posScore += magnitude
+				}
 				posHits = append(posHits, "not "+w)
+			} else {
+				// "bad" → negative
+				if inContrast {
+					afterContrastNeg += magnitude
+				} else {
+					negScore += magnitude
+				}
+				negHits = append(negHits, w)
 			}
 		}
 	}
 
 	// After contrast, the post-contrast clause gets 2x weight
-	if inContrast && beforeContrast > 0 {
-		// The contrast clause after "but" gets 2x
-		posScore += afterContrastPos * 2.0
+	if inContrast {
 		negScore += afterContrastNeg * 2.0
+		posScore += afterContrastPos * 2.0
 	} else {
-		posScore += afterContrastPos
 		negScore += afterContrastNeg
+		posScore += afterContrastPos
 	}
 
+	// All scores are now non-negative. Determine label.
 	if posScore > 0 && negScore == 0 {
 		return "positive", uniqueHits(posHits), true
 	}
 	if negScore > 0 && posScore == 0 {
 		return "negative", uniqueHits(negHits), true
 	}
-	// Mixed signal: use the dominant score
-	if posScore > negScore && (posScore-negScore)/(posScore+negScore) > 0.33 {
-		return "positive", uniqueHits(posHits), true
-	}
-	if negScore > posScore && (negScore-posScore)/(posScore+negScore) > 0.33 {
-		return "negative", uniqueHits(negHits), true
-	}
 	if posScore == 0 && negScore == 0 {
 		return "neutral", nil, false
+	}
+
+	// Mixed signal: require dominant polarity to lead by at least 2:1 ratio
+	if (posScore-negScore)/(posScore+negScore) > 0.33 {
+		return "positive", uniqueHits(posHits), true
+	}
+	if (negScore-posScore)/(posScore+negScore) > 0.33 {
+		return "negative", uniqueHits(negHits), true
 	}
 	return "", nil, false
 }

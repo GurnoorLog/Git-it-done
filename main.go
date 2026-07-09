@@ -97,48 +97,27 @@ func run() error {
 	log.Printf("Phase 1 complete: %d deterministic, %d pending Fireworks", len(tasks)-len(pending), len(pending))
 
 	if len(pending) > 0 {
-		// Phase 2: group pending tasks by category and batch-process
-		type pendingTask struct {
-			idx  int
-			task task.Task
-			cat  classify.Category
-		}
-
-		pendingList := make([]pendingTask, 0, len(pending))
+		// Phase 2: process each pending task individually through Fireworks.
+		// No batching — per-task calls are more reliable with model output format.
 		for _, idx := range pending {
-			pendingList = append(pendingList, pendingTask{
-				idx:  idx,
-				task: tasks[idx],
-				cat:  classify.Classify(tasks[idx].Prompt),
-			})
-		}
-
-		byCat := make(map[classify.Category][]pendingTask)
-		for _, pt := range pendingList {
-			byCat[pt.cat] = append(byCat[pt.cat], pt)
-		}
-
-		for cat, group := range byCat {
 			select {
 			case <-ctx.Done():
 				log.Printf("Deadline reached; marking remaining tasks as emergency")
-				for _, pt := range group {
-					results[pt.idx] = emergencyResult(pt.task)
+				for _, ptIdx := range pending {
+					if results[ptIdx].TaskID == "" {
+						results[ptIdx] = emergencyResult(tasks[ptIdx])
+					}
 				}
-				continue
+				goto done
 			default:
 			}
 
-			taskList := make([]task.Task, len(group))
-			for i, pt := range group {
-				taskList[i] = pt.task
-			}
-
-			batchResults := taskRouter.BatchProcess(ctx, taskList, cat)
-			for i, br := range batchResults {
-				if i < len(group) {
-					results[group[i].idx] = br
-				}
+			res, err := taskRouter.Process(ctx, tasks[idx])
+			if err != nil {
+				log.Printf("[Task %s] Fireworks failed: %v; using emergency", tasks[idx].TaskID, err)
+				results[idx] = emergencyResult(tasks[idx])
+			} else {
+				results[idx] = res
 			}
 		}
 
@@ -151,6 +130,7 @@ func run() error {
 		}
 	}
 
+done:
 	outPath := os.Getenv("OUTPUT_PATH")
 	if outPath == "" {
 		outPath = "/output/results.json"
