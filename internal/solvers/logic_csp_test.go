@@ -27,6 +27,11 @@ var logicTests = []logicTest{
 		wantSolved: true,
 		checkFn: func(a string) bool { return strings.HasPrefix(a, "Yara") },
 	},
+	{
+		prompt: "Three friends, Sam, Jo, and Lee, each own a different pet: cat, dog, bird. Sam does not own the bird. Jo owns the dog. Who owns the cat?",
+		wantSolved: true,
+		checkFn: func(a string) bool { return strings.HasPrefix(a, "Sam") },
+	},
 	// Complex logic that the parser can't confidently handle → must escalate
 	{
 		prompt: "If all glibbers are floobers and some floobers are not wumbles, can we conclude that no glibbers are wumbles?",

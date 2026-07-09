@@ -48,6 +48,12 @@ func SolveMath(prompt string) MathResult {
 		}
 		return r
 	}
+	if r := solvePercentConsumed(lower, prompt); r.Solved {
+		if !sanityCheckNonNegative(r.Answer) {
+			return MathResult{Solved: false, Reasoning: "sanity check failed: percent consumed was negative; escalating"}
+		}
+		return r
+	}
 	if r := solveGrowthProjection(lower, prompt); r.Solved {
 		if !sanityCheckNonNegative(r.Answer) {
 			return MathResult{Solved: false, Reasoning: "sanity check failed: growth projection was negative; escalating"}
@@ -323,6 +329,89 @@ func solveWorkRate(lower, original string) MathResult {
 		Solved:    true,
 		Answer:    fmt.Sprintf("%s: the total work is %s workers × %s days = %s worker-days, so %s workers need %s.", ans, m1[1], m1[2], formatRat(totalWork), formatRat(w2), ans),
 		Reasoning: fmt.Sprintf("%s workers × %s days ÷ %s workers = %s", m1[1], m1[2], formatRat(w2), ans),
+	}
+}
+
+// ── Pattern: percent consumed (remove X% from total, possibly plus more) ──
+
+var (
+	rePctConsumed   = regexp.MustCompile(`(?i)([\d,]+(?:\.\d+)?)\s*%\s*(?:on|of|in|during|per|a\s+week|a\s+day|this\s+week|this\s+month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)`)
+	reTotalItems    = regexp.MustCompile(`(?i)(?:has|with|of|from|out of|starting|originally|initially|total\s+of)\s+([\d,]+(?:\.\d+)?)\s*(?:items?|units?|things?|products?|people|customers|members|total|overall)`)
+	reRemainingWord = regexp.MustCompile(`(?i)(?:remain|left|remaining|still have|how many|how much)`)
+	reSubNumber     = regexp.MustCompile(`(?i)(?:and|then|plus|also)\s+([\d,]+(?:\.\d+)?)\s+(?:more|additional|extra|\w+)`)
+)
+
+func solvePercentConsumed(lower, original string) MathResult {
+	// Need a total/base number.
+	totalM := reTotalItems.FindStringSubmatch(original)
+	if len(totalM) < 2 {
+		return MathResult{}
+	}
+	total := parseNumber(totalM[1])
+	if total == nil {
+		return MathResult{}
+	}
+
+	if !reRemainingWord.MatchString(lower) {
+		return MathResult{}
+	}
+
+	// Find all percentage consumption events.
+	pctMatches := rePctConsumed.FindAllStringSubmatch(original, -1)
+	if len(pctMatches) == 0 {
+		return MathResult{}
+	}
+
+	remaining := new(big.Rat).Set(total)
+	hundred := new(big.Rat).SetInt64(100)
+
+	for _, m := range pctMatches {
+		pct := parseNumber(m[1])
+		if pct == nil {
+			return MathResult{}
+		}
+		consumed := new(big.Rat).Mul(total, pct)
+		consumed.Quo(consumed, hundred)
+		remaining.Sub(remaining, consumed)
+		if mustFloat(remaining) < 0 {
+			return MathResult{}
+		}
+	}
+
+	// Find any additional absolute subtractions.
+	for _, m := range reSubNumber.FindAllStringSubmatch(original, -1) {
+		sub := parseNumber(m[1])
+		if sub != nil {
+			remaining.Sub(remaining, sub)
+			if mustFloat(remaining) < 0 {
+				return MathResult{}
+			}
+		}
+	}
+
+	ft := mustFloat(remaining)
+	ans := fmt.Sprintf("%.0f", ft)
+
+	var steps []string
+	for _, m := range pctMatches {
+		pctVal := m[1]
+		amtRat := new(big.Rat).Mul(total, parseNumber(m[1]))
+		amtRat.Quo(amtRat, hundred)
+		steps = append(steps, fmt.Sprintf("%s%% of %s is %s", pctVal, totalM[1], formatRat(amtRat)))
+	}
+
+	extraSubs := reSubNumber.FindAllStringSubmatch(original, -1)
+	if len(extraSubs) > 0 {
+		for _, m := range extraSubs {
+			steps = append(steps, fmt.Sprintf("then %s more are removed", m[1]))
+		}
+	}
+
+	stepStr := strings.Join(steps, ", ")
+	return MathResult{
+		Solved:    true,
+		Answer:    fmt.Sprintf("%s: starting with %s, %s, leaving %s.", ans, totalM[1], stepStr, ans),
+		Reasoning: fmt.Sprintf("percent consumed from %s: %s", totalM[1], stepStr),
 	}
 }
 

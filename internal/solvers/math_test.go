@@ -29,6 +29,9 @@ var mathTests = []mathTest{
 	{"3 workers can complete a job in 12 days. How many days will 9 workers take?", "4 days", true},
 	{"6 workers finish a task in 10 days. How long will 15 workers take?", "4 days", true},
 
+	// Percent consumed
+	{"A store has 240 items. It sells 15% on Monday and 60 more on Tuesday. How many items remain?", "144", true},
+
 	// Growth projection
 	{"A city population is 2 million growing at 3% per year. What will it be in 5 years?", "", true},
 

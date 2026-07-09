@@ -313,10 +313,159 @@ func posInt(s string) int {
 
 // ── Public entry point ────────────────────────────────────────────────────
 
+// ── Simple deduction solver (non-seating puzzles) ─────────────────────────
+
+var reSimpleDeduction = regexp.MustCompile(`(?i)(each owns? a different|each has a different|different (?:pet|animal|object|item|color|car|house|job))`)
+
+// solveSimpleDeduction handles "who owns what" style puzzles via forward
+// constraint propagation. These puzzles have N people, N items, and
+// assignment constraints like "Sam does not own the bird. Jo owns the dog."
+func solveSimpleDeduction(prompt string) LogicResult {
+	rePerson := regexp.MustCompile(`\b([A-Z][a-z]+)\b`)
+	allCaps := rePerson.FindAllString(prompt, -1)
+	exclude := map[string]bool{"Who": true, "What": true, "How": true, "The": true, "If": true, "In": true, "A": true, "An": true, "Each": true, "Either": true, "First": true, "Last": true, "Two": true, "Three": true, "Four": true, "Five": true, "Six": true, "Not": true, "Is": true, "Are": true, "Was": true, "Were": true, "Does": true, "Do": true, "Has": true, "Have": true, "Owns": true, "Own": true, "Cat": true, "Dog": true, "Bird": true, "Red": true, "Blue": true, "Green": true}
+	var people []string
+	for _, n := range allCaps {
+		if !exclude[n] {
+			people = append(people, n)
+		}
+	}
+	seen := map[string]bool{}
+	var unique []string
+	for _, p := range people {
+		if !seen[p] {
+			seen[p] = true
+			unique = append(unique, p)
+		}
+	}
+	people = unique
+	if len(people) < 2 || len(people) > 6 {
+		return LogicResult{}
+	}
+
+	lower := strings.ToLower(prompt)
+	reItems := regexp.MustCompile(`\b(cat|dog|bird|fish|hamster|rabbit|red|blue|green|yellow|white|black|car|bike|truck|van|doctor|teacher|lawyer|engineer|nurse|artist|pilot|chef|writer|soccer|tennis|swimming|running|reading|cooking|gardening|painting|piano|guitar|drums|violin|flute|france|germany|spain|italy|japan|uk|usa|canada|australia|brazil|china|india)\b`)
+	itemMatches := reItems.FindAllString(lower, -1)
+	seenItems := map[string]bool{}
+	var items []string
+	for _, it := range itemMatches {
+		if !seenItems[it] {
+			seenItems[it] = true
+			items = append(items, it)
+		}
+	}
+	if len(items) != len(people) {
+		return LogicResult{}
+	}
+
+	type triple struct{ person, item string; owns bool }
+	var constraints []triple
+	constraintExclude := map[string]bool{"Who": true, "What": true, "Which": true, "How": true}
+	reOwns := regexp.MustCompile(`\b([A-Z][a-z]+)\s+(?:owns|has(?: the)?)\s+(?:the\s+)?(cat|dog|bird|fish|rabbit|red|blue|green|yellow|white|black|car|bike|truck|van|doctor|teacher|lawyer|engineer|nurse|artist|pilot|chef|writer|soccer|tennis|swimming|running|reading|cooking|gardening|painting|piano|guitar|drums|violin|flute)`)
+	for _, m := range reOwns.FindAllStringSubmatch(prompt, -1) {
+		if len(m) >= 3 && !constraintExclude[m[1]] {
+			constraints = append(constraints, triple{m[1], strings.ToLower(m[2]), true})
+		}
+	}
+	reNotOwns := regexp.MustCompile(`\b([A-Z][a-z]+)\s+does\s+not\s+own\s+(?:the\s+)?(cat|dog|bird|fish|rabbit|red|blue|green|yellow|white|black|car|bike|truck|van|doctor|teacher|lawyer|engineer|nurse|artist|pilot|chef|writer|soccer|tennis|swimming|running|reading|cooking|gardening|painting|piano|guitar|drums|violin|flute)`)
+	for _, m := range reNotOwns.FindAllStringSubmatch(prompt, -1) {
+		if len(m) >= 3 && !constraintExclude[m[1]] {
+			constraints = append(constraints, triple{m[1], strings.ToLower(m[2]), false})
+		}
+	}
+	if len(constraints) < 2 {
+		return LogicResult{}
+	}
+
+	// Forward propagation: assign items to people.
+	assign := map[string]string{}        // person → item
+	forbidden := map[string][]string{}   // person → items they can't have
+	itemOwner := map[string]string{}     // item → person
+
+	for _, c := range constraints {
+		if c.owns {
+			assign[c.person] = c.item
+			itemOwner[c.item] = c.person
+		} else {
+			forbidden[c.person] = append(forbidden[c.person], c.item)
+		}
+	}
+
+	// Deduce remaining: if a person has only one possible item left, assign it.
+	changed := true
+	for changed {
+		changed = false
+		for _, p := range people {
+			if assign[p] != "" {
+				continue
+			}
+			var possible []string
+			for _, it := range items {
+				if itemOwner[it] != "" && itemOwner[it] != p {
+					continue
+				}
+				isForbidden := false
+				for _, f := range forbidden[p] {
+					if f == it {
+						isForbidden = true
+						break
+					}
+				}
+				if !isForbidden {
+					possible = append(possible, it)
+				}
+			}
+			if len(possible) == 1 {
+				assign[p] = possible[0]
+				itemOwner[possible[0]] = p
+				changed = true
+			}
+		}
+	}
+
+	// Check if all assigned.
+	for _, p := range people {
+		if assign[p] == "" {
+			return LogicResult{}
+		}
+	}
+
+	// Answer the question.
+	reAskWho := regexp.MustCompile(`\bWho\s+(?:owns|has(?: the)?)\s+(?:the\s+)?(cat|dog|bird|fish|rabbit|red|blue|green|yellow|white|black|car|bike|truck|van|doctor|teacher|lawyer|engineer|nurse|artist|pilot|chef|writer|soccer|tennis|swimming|running|reading|cooking|gardening|painting|piano|guitar|drums|violin|flute)`)
+	if m := reAskWho.FindStringSubmatch(prompt); len(m) >= 2 {
+		target := strings.ToLower(m[1])
+		for p, it := range assign {
+			if it == target {
+				return LogicResult{
+					Solved:    true,
+					Answer:    fmt.Sprintf("%s. %s owns the %s.", p, p, target),
+					Reasoning: "simple deduction via constraint propagation",
+				}
+			}
+		}
+	}
+
+	// Generic answer: list all assignments.
+	var parts []string
+	for _, p := range people {
+		parts = append(parts, fmt.Sprintf("%s owns the %s", p, assign[p]))
+	}
+	return LogicResult{
+		Solved:    true,
+		Answer:    strings.Join(parts, ", ") + ".",
+		Reasoning: "simple deduction via constraint propagation",
+	}
+}
+
 // SolveLogic attempts to parse and solve a logical/deductive puzzle.
 func SolveLogic(prompt string) LogicResult {
 	// Deterministic propositional inference (modus tollens) first — free and exact.
 	if r := solveModusTollens(prompt); r.Solved {
+		return r
+	}
+
+	// Simple deduction for "who owns what" style puzzles.
+	if r := solveSimpleDeduction(prompt); r.Solved {
 		return r
 	}
 
