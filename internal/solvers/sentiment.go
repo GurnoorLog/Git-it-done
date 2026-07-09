@@ -6,10 +6,6 @@ import (
 	"strings"
 )
 
-// Deterministic sentiment lexicon used to cross-check the local model's label.
-// A local answer is only accepted when the lexicon signal is unambiguous AND
-// matches the local model's label. Anything ambiguous escalates to Fireworks.
-
 var positiveWords = map[string]bool{
 	"love": true, "loved": true, "loves": true, "great": true, "excellent": true,
 	"amazing": true, "awesome": true, "fantastic": true, "wonderful": true,
@@ -19,6 +15,9 @@ var positiveWords = map[string]bool{
 	"satisfied": true, "recommend": true, "beautiful": true, "helpful": true,
 	"friendly": true, "delicious": true, "incredible": true, "exceeded": true,
 	"flawless": true, "smooth": true, "fast": true, "thrilled": true,
+	"nice": true, "decent": true, "okay": true, "fine": true, "well": true,
+	"easy": true, "elegant": true, "efficient": true, "reliable": true,
+	"effective": true, "comfortable": true, "quality": true, "convenient": true,
 }
 
 var negativeWords = map[string]bool{
@@ -30,61 +29,137 @@ var negativeWords = map[string]bool{
 	"dirty": true, "slow": true, "mediocre": true, "refund": true, "unusable": true,
 	"crashed": true, "crashes": true, "failure": true, "failed": true,
 	"pathetic": true, "disgusting": true, "overpriced": true, "regret": true,
+	"boring": true, "bland": true, "loud": true, "noisy": true, "costly": true,
+	"expensive": true, "cheap": true, "glitchy": true, "buggy": true,
+	"stale": true, "cold": true, "unpleasant": true, "uncomfortable": true,
+}
+
+// Intensifier multipliers: "very good" = 1.5x, "extremely good" = 2x
+var intensifiers = map[string]float64{
+	"very": 1.5, "really": 1.5, "extremely": 2.0, "incredibly": 2.0,
+	"absolutely": 2.0, "totally": 1.5, "completely": 1.5, "highly": 1.5,
+	"so": 1.3, "quite": 1.3, "somewhat": 0.5, "slightly": 0.5,
+	"barely": 0.3, "hardly": 0.3, "pretty": 1.2, "fairly": 1.1,
 }
 
 var negators = map[string]bool{
 	"not": true, "never": true, "no": true, "hardly": true, "barely": true,
 	"isn't": true, "wasn't": true, "aren't": true, "don't": true, "didn't": true,
 	"doesn't": true, "won't": true, "can't": true, "couldn't": true,
+	"neither": true, "nor": true, "nothing": true, "nowhere": true,
+}
+
+// Contrast words: the clause after these gets extra weight
+var contrastWords = map[string]bool{
+	"but": true, "however": true, "although": true, "though": true,
+	"nevertheless": true, "nonetheless": true, "yet": true, "whereas": true,
+	"while": true, "despite": true, "except": true, "unfortunately": true,
 }
 
 var reWordToken = regexp.MustCompile(`[A-Za-z']+`)
 
-// LexiconSentiment scores text against the polarity lexicon.
-// confident is true only when one polarity has >=1 hit and the other has zero —
-// a clear, unambiguous signal. hits contains the matched words (for the
-// templated justification).
+// LexiconSentiment scores text against the polarity lexicon with negation
+// handling, intensifier multipliers, and contrast weighting.
+// Returns confident=true when the score difference is large enough.
 func LexiconSentiment(text string) (label string, hits []string, confident bool) {
 	words := reWordToken.FindAllString(strings.ToLower(text), -1)
+
+	var posScore, negScore float64
 	var posHits, negHits []string
+	inContrast := false
+	clausePos, clauseNeg := 0.0, 0.0
+
 	for i, w := range words {
+		if contrastWords[w] {
+			// Apply contrast multiplier to previous clause scores
+			posScore += clausePos * 0.5 // first clause gets normal weight
+			negScore += clauseNeg * 0.5
+			clausePos, clauseNeg = 0, 0
+			inContrast = true
+			continue
+		}
+
+		multiplier := 1.0
+		if i > 0 {
+			if m, ok := intensifiers[words[i-1]]; ok {
+				multiplier = m
+			}
+		}
 		negated := i > 0 && negators[words[i-1]]
+		if negated {
+			multiplier *= -1
+		}
+
 		switch {
 		case positiveWords[w]:
-			if negated {
-				negHits = append(negHits, "not "+w)
-			} else {
+			score := 1.0 * multiplier
+			clausePos += score
+			if multiplier > 0 {
 				posHits = append(posHits, w)
+			} else {
+				negHits = append(negHits, "not "+w)
 			}
 		case negativeWords[w]:
-			if negated {
-				posHits = append(posHits, "not "+w)
-			} else {
+			score := 1.0 * multiplier
+			clauseNeg += score
+			if multiplier > 0 {
 				negHits = append(negHits, w)
+			} else {
+				posHits = append(posHits, "not "+w)
 			}
 		}
 	}
-	switch {
-	case len(posHits) >= 1 && len(negHits) == 0:
-		return "positive", posHits, true
-	case len(negHits) >= 1 && len(posHits) == 0:
-		return "negative", negHits, true
-	case len(posHits) == 0 && len(negHits) == 0:
-		return "neutral", nil, false // no signal — do not trust
-	default:
-		return "", nil, false // mixed signal — escalate
+
+	// Apply contrast multiplier: the clause AFTER the contrast word gets 2x weight
+	if inContrast {
+		posScore += clausePos * 0.5
+		negScore += clauseNeg * 0.5
+		posScore += clausePos * 1.0
+		negScore += clauseNeg * 1.0
+	} else {
+		posScore += clausePos
+		negScore += clauseNeg
 	}
+
+	if posScore > 0 && negScore == 0 {
+		return "positive", uniqueHits(posHits), true
+	}
+	if negScore > 0 && posScore == 0 {
+		return "negative", uniqueHits(negHits), true
+	}
+	// Mixed signal: use the dominant score
+	if posScore > negScore && (posScore-negScore)/(posScore+negScore) > 0.33 {
+		return "positive", uniqueHits(posHits), true
+	}
+	if negScore > posScore && (negScore-posScore)/(posScore+negScore) > 0.33 {
+		return "negative", uniqueHits(negHits), true
+	}
+	if posScore == 0 && negScore == 0 {
+		return "neutral", nil, false
+	}
+	return "", nil, false
+}
+
+func uniqueHits(hits []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, h := range hits {
+		if !seen[h] {
+			seen[h] = true
+			result = append(result, h)
+		}
+	}
+	return result
 }
 
 // ParseSentimentLabel extracts a canonical sentiment label from model output.
-// Returns "" if no unambiguous label is found.
 func ParseSentimentLabel(s string) string {
 	lower := strings.ToLower(s)
 	found := ""
 	for _, l := range []string{"positive", "negative", "neutral"} {
 		if strings.Contains(lower, l) {
 			if found != "" {
-				return "" // multiple labels mentioned — ambiguous
+				return ""
 			}
 			found = l
 		}
@@ -92,8 +167,7 @@ func ParseSentimentLabel(s string) string {
 	return found
 }
 
-// BuildSentimentAnswer produces a judge-friendly one-line answer:
-// "<label>. <one-sentence justification citing the strongest cue words>"
+// BuildSentimentAnswer produces a judge-friendly one-line answer.
 func BuildSentimentAnswer(label string, hits []string) string {
 	if len(hits) == 0 {
 		return fmt.Sprintf("%s. The text expresses a clearly %s tone overall.", label, label)
@@ -110,9 +184,7 @@ func BuildSentimentAnswer(label string, hits []string) string {
 		label, label, label, strings.Join(quoted, " and "))
 }
 
-// ExtractQuotedOrTail returns the text being analysed: the longest quoted
-// segment if present, otherwise everything after the last colon, otherwise
-// the full prompt.
+// ExtractQuotedOrTail returns the text being analysed.
 func ExtractQuotedOrTail(prompt string) string {
 	best := ""
 	for _, re := range []*regexp.Regexp{

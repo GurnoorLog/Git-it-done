@@ -5,16 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
+	"track1-agent/internal/classify"
 	"track1-agent/internal/fireworks"
-	"track1-agent/internal/local"
 	"track1-agent/internal/output"
 	"track1-agent/internal/router"
+	"track1-agent/internal/solvers"
 	"track1-agent/internal/task"
 )
 
@@ -34,17 +31,7 @@ func run() error {
 	}
 
 	fwClient := fireworks.NewClient(fwConfig)
-
-	var localClient *local.Client
-	localURL := os.Getenv("OLLAMA_HOST")
-	if localURL == "" {
-		localURL = "http://localhost:11434"
-	}
-	localCfg := local.DefaultConfig
-	localCfg.BaseURL = localURL
-	localClient = local.NewClient(localCfg)
-
-	taskRouter := router.New(localClient, fwClient, fwConfig.AllowedModels)
+	taskRouter := router.New(fwClient, fwConfig.AllowedModels)
 
 	inPath := os.Getenv("INPUT_PATH")
 	if inPath == "" {
@@ -57,8 +44,6 @@ func run() error {
 
 	log.Printf("Loaded %d tasks from %s", len(tasks), inPath)
 
-	// Global deadline: 8 minutes 30 seconds — leaves 90s buffer before the
-	// 10-minute grading cap for results serialization and graceful shutdown.
 	deadline := 8*time.Minute + 30*time.Second
 	if v := os.Getenv("AGENT_DEADLINE"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -71,46 +56,98 @@ func run() error {
 	log.Printf("Agent deadline: %v", deadline)
 
 	results := make([]task.Result, len(tasks))
-	concurrencyLimit := 3
-	if v := os.Getenv("AGENT_CONCURRENCY"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			concurrencyLimit = n
+	pending := make([]int, 0, len(tasks))
+
+	// Phase 1: classify + deterministic solvers (fast, no API calls)
+	for i, t := range tasks {
+		cat := classify.Classify(t.Prompt)
+		var resolved bool
+		switch cat {
+		case classify.CategoryMath:
+			if res := solvers.SolveMath(t.Prompt); res.Solved {
+				results[i] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
+				resolved = true
+			}
+		case classify.CategoryLogical:
+			if res := solvers.SolveLogic(t.Prompt); res.Solved {
+				results[i] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
+				resolved = true
+			}
+		case classify.CategorySentiment:
+			text := solvers.ExtractQuotedOrTail(t.Prompt)
+			if label, hits, confident := solvers.LexiconSentiment(text); confident {
+				results[i] = task.Result{TaskID: t.TaskID, Answer: solvers.BuildSentimentAnswer(label, hits), ResolutionPath: "deterministic"}
+				resolved = true
+			}
+		case classify.CategoryCodeGeneration:
+			if code := solvers.LookupCodeTemplate(t.Prompt); code != "" {
+				if ok, _ := solvers.VerifyCode(context.Background(), code); ok {
+					results[i] = task.Result{TaskID: t.TaskID, Answer: code, ResolutionPath: "deterministic"}
+					resolved = true
+				}
+			}
+		}
+		if resolved {
+			log.Printf("[Task %s] Resolved: deterministic (%s)", t.TaskID, cat)
+		} else {
+			pending = append(pending, i)
 		}
 	}
-	log.Printf("Agent concurrency: %d", concurrencyLimit)
 
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(concurrencyLimit)
+	log.Printf("Phase 1 complete: %d deterministic, %d pending Fireworks", len(tasks)-len(pending), len(pending))
 
-	for i, t := range tasks {
-		i, t := i, t
-		eg.Go(func() error {
+	if len(pending) > 0 {
+		// Phase 2: group pending tasks by category and batch-process
+		type pendingTask struct {
+			idx  int
+			task task.Task
+			cat  classify.Category
+		}
+
+		pendingList := make([]pendingTask, 0, len(pending))
+		for _, idx := range pending {
+			pendingList = append(pendingList, pendingTask{
+				idx:  idx,
+				task: tasks[idx],
+				cat:  classify.Classify(tasks[idx].Prompt),
+			})
+		}
+
+		byCat := make(map[classify.Category][]pendingTask)
+		for _, pt := range pendingList {
+			byCat[pt.cat] = append(byCat[pt.cat], pt)
+		}
+
+		for cat, group := range byCat {
 			select {
 			case <-ctx.Done():
-				results[i] = emergencyFallback(taskRouter, t)
-				return nil
+				log.Printf("Deadline reached; marking remaining tasks as emergency")
+				for _, pt := range group {
+					results[pt.idx] = emergencyResult(pt.task)
+				}
+				continue
 			default:
 			}
-			res, err := taskRouter.Process(ctx, t)
-			if err != nil {
-				log.Printf("[Task %s] Process failed: %v; using emergency fallback", t.TaskID, err)
-				results[i] = emergencyFallback(taskRouter, t)
-				return nil
+
+			taskList := make([]task.Task, len(group))
+			for i, pt := range group {
+				taskList[i] = pt.task
 			}
-			results[i] = res
-			return nil
-		})
-	}
 
-	if err := eg.Wait(); err != nil {
-		log.Printf("Task processing group error: %v (results will still be written)", err)
-	}
+			batchResults := taskRouter.BatchProcess(ctx, taskList, cat)
+			for i, br := range batchResults {
+				if i < len(group) {
+					results[group[i].idx] = br
+				}
+			}
+		}
 
-	// Fill any remaining unprocessed tasks with emergency answers.
-	for i, res := range results {
-		if res.TaskID == "" {
-			log.Printf("[Task %s] No result was produced; using emergency fallback", tasks[i].TaskID)
-			results[i] = emergencyFallback(taskRouter, tasks[i])
+		// Fill any remaining unprocessed tasks with emergency answers.
+		for i, res := range results {
+			if res.TaskID == "" {
+				log.Printf("[Task %s] No result was produced; using emergency fallback", tasks[i].TaskID)
+				results[i] = emergencyResult(tasks[i])
+			}
 		}
 	}
 
@@ -127,25 +164,20 @@ func run() error {
 	return nil
 }
 
-func emergencyFallback(r *router.Router, t task.Task) task.Result {
-	res := r.Emergency(context.Background(), t)
-	if strings.HasPrefix(res.Answer, "ERROR:") {
-		res.Answer = "Unable to fully determine the answer within constraints."
+func emergencyResult(t task.Task) task.Result {
+	return task.Result{
+		TaskID:         t.TaskID,
+		Answer:         "Unable to fully determine the answer within constraints.",
+		ResolutionPath: "emergency",
 	}
-	return res
 }
 
 func printSummary(tasks []task.Task, results []task.Result, fwClient *fireworks.Client) {
-	var totalTokens, deterministicCount, localCount, localVerifiedCount, fireworksCount, verificationTokens, errorCount int
+	var totalTokens, deterministicCount, fireworksCount, errorCount int
 	for _, res := range results {
 		switch res.ResolutionPath {
 		case "deterministic":
 			deterministicCount++
-		case "local":
-			localCount++
-		case "local_verified":
-			localVerifiedCount++
-			verificationTokens += res.TotalTokens
 		case "fireworks":
 			fireworksCount++
 			totalTokens += res.TotalTokens
@@ -159,12 +191,9 @@ func printSummary(tasks []task.Task, results []task.Result, fwClient *fireworks.
 	log.Println("==================================================")
 	log.Printf("Total Tasks              : %d\n", len(tasks))
 	log.Printf("Resolved Deterministic   : %d\n", deterministicCount)
-	log.Printf("Resolved Local           : %d\n", localCount)
-	log.Printf("Resolved Local+Verified  : %d (verification tokens: %d)\n", localVerifiedCount, verificationTokens)
 	log.Printf("Resolved Fireworks       : %d\n", fireworksCount)
 	log.Printf("Errors                   : %d\n", errorCount)
-	log.Printf("Generation Tokens        : %d\n", totalTokens)
-	log.Printf("Total Fireworks Tokens   : %d\n", totalTokens+verificationTokens)
+	log.Printf("Total Fireworks Tokens   : %d\n", totalTokens)
 	log.Println("--------------------------------------------------")
 	log.Println("==================================================")
 }

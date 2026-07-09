@@ -17,7 +17,7 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 	switch category {
 	case "math":
 		return CategoryPrompt{
-			System: "You are a precise math solver. " + terse + " Compute carefully step by step in your head, then output exactly one line: the final numeric answer, a colon, and a one-line explanation of the calculation. Example: '90.00: 25% of 120 is 30, so 120 - 30 = 90.'",
+			System: "You are a precise math solver. Think step by step, then output exactly one line: the final numeric answer, a colon, and a brief explanation. Example: '90.00: 25% of 120 is 30, so 120 - 30 = 90.' " + terse,
 		}
 
 	case "sentiment":
@@ -37,27 +37,28 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 
 	case "summarization":
 		return CategoryPrompt{
-			System: "You are a precise summarizer. " + terse + " Read the length/format constraint in the task and follow it EXACTLY: 'two sentences' means exactly 2 sentences; 'under 15 words' means fewer than 15 words; 'three bullet points' means exactly 3 bullets. Use only facts from the source text.",
+			System: "You are a precise summarizer. " + terse + " Read the length/format constraint in the task and follow it EXACTLY: 'two sentences' means exactly 2 sentences; 'under 15 words' means fewer than 15 words; 'three bullet points' means exactly 3 bullets. Use only facts from the source text. Do not add opinions or interpretations.",
 		}
 
 	case "code_generation":
 		return CategoryPrompt{
-			System: "Write the requested code. Handle edge cases (empty input, single element, ties, punctuation) per the spec. " +
+			System: "Write the requested code. Handle edge cases (empty input, single element, ties, punctuation, negative numbers) per the spec. " +
 				"Output ONLY valid, runnable code. No markdown code fences. No explanation before or after. The first line must be code (or a code comment).",
 		}
 
 	case "code_debugging":
 		return CategoryPrompt{
-			System: "Find and fix the bug in the given code. " +
-				"First line must be a comment (e.g. '# BUG: ...') naming the bug in one short phrase. " +
+			System: "Find and fix the bug in the given code. First identify the bug precisely, then output the complete fixed code. " +
+				"First line must be a comment naming the bug in one short phrase (e.g. '# BUG: off-by-one error in loop condition'). " +
 				"All remaining lines are the complete fixed code. " +
-				"Output ONLY valid code. No markdown code fences. No explanation before or after.",
+				"Output ONLY valid code. No markdown code fences. No explanation before or after the code block.",
 		}
 
 	case "logical":
 		return CategoryPrompt{
-			System: "Solve the logic problem. Reason concisely step by step (short lines, no filler). " +
+			System: "Solve the logic puzzle carefully. Think step by step, writing short reasoning lines. " +
 				"The very last line MUST be exactly: 'Final answer: ...' with the complete answer to the question asked. " +
+				"If the question asks for a name, order, or assignment, include all relevant details in the final answer. " +
 				"No markdown. All output in English.",
 		}
 
@@ -65,8 +66,9 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 		fallthrough
 	default:
 		return CategoryPrompt{
-			System: "Answer the question accurately and directly in at most 4 short sentences. " +
-				"No hedging ('I think', 'probably'). If asked to explain simply, use plain language. " + terse,
+			System: "Answer the question accurately and completely. " +
+				"If the question asks for a list, number, or specific fact, give the exact answer first, then a brief explanation if helpful. " +
+				"No hedging ('I think', 'probably', 'I believe'). Respond with precise, factual information. " + terse,
 		}
 	}
 }

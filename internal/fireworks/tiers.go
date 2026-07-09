@@ -120,22 +120,19 @@ func (tm TierMap) SelectModelFallbacks(category string) []string {
 	}
 
 	switch category {
-	// Simple tasks: cheap MoE is accurate enough, saves tokens for ranking.
-	case "sentiment", "ner":
+	// Sentiment/NER/summarization: cheap MoE handles text tasks well.
+	case "sentiment", "ner", "summarization":
 		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
-	// Summarization: MoE handles text tasks well, cheap on tokens.
-	case "summarization":
-		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
-	// Factual knowledge: flagship (minimax) is most accurate.
+	// Factual: cheap MoE (gemma-4-26b-a4b-it) — low tokens, sufficient accuracy.
 	case "factual":
-		return collect(TierFlagship, TierDense, TierQuantized, TierCode, TierCheap)
-	// Code: code specialist first.
-	case "code_generation", "code_debugging":
-		return collect(TierCode, TierFlagship, TierDense, TierQuantized, TierCheap)
-	// Math/Logic: need best reasoning, flagship first.
+		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
+	// Math/Logic: dense (gemma-4-31b-it) for reasoning, moderate tokens.
 	case "math", "logical":
-		return collect(TierFlagship, TierDense, TierQuantized, TierCode, TierCheap)
+		return collect(TierDense, TierFlagship, TierQuantized, TierCode, TierCheap)
+	// Code: code specialist (kimi) first.
+	case "code_generation", "code_debugging":
+		return collect(TierCode, TierDense, TierFlagship, TierQuantized, TierCheap)
 	default:
-		return collect(TierFlagship, TierDense, TierCheap, TierQuantized, TierCode)
+		return collect(TierDense, TierFlagship, TierCheap, TierQuantized, TierCode)
 	}
 }

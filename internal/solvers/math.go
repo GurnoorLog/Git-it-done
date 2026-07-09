@@ -60,6 +60,15 @@ func SolveMath(prompt string) MathResult {
 		}
 		return r
 	}
+	if r := solveAverage(lower, prompt); r.Solved {
+		return r
+	}
+	if r := solveProportional(lower, prompt); r.Solved {
+		if !sanityCheckNonNegative(r.Answer) {
+			return MathResult{Solved: false, Reasoning: "sanity check failed: proportional result was negative; escalating"}
+		}
+		return r
+	}
 
 	return MathResult{Solved: false, Reasoning: "could not confidently parse problem structure"}
 }
@@ -460,4 +469,66 @@ func solveGrowthProjection(lower, original string) MathResult {
 func mustFloat(r *big.Rat) float64 {
 	f, _ := r.Float64()
 	return f
+}
+
+// ── Pattern: average / mean ────────────────────────────────────────────────
+
+var reAverage = regexp.MustCompile(`(?i)(?:average|mean)\s+of\s+([\d\s,.]+)`)
+
+func solveAverage(lower, original string) MathResult {
+	m := reAverage.FindStringSubmatch(original)
+	if len(m) < 2 {
+		return MathResult{}
+	}
+
+	reNum := regexp.MustCompile(`[\d]+(?:\.\d+)?`)
+	numStrs := reNum.FindAllString(m[1], -1)
+	if len(numStrs) == 0 {
+		return MathResult{}
+	}
+
+	var sum float64
+	for _, s := range numStrs {
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return MathResult{}
+		}
+		sum += v
+	}
+	avg := sum / float64(len(numStrs))
+
+	ans := fmt.Sprintf("%.2f", avg)
+	return MathResult{
+		Solved:    true,
+		Answer:    fmt.Sprintf("%s: the average of [%s] is %.2f / %d = %s.", ans, strings.Join(numStrs, ", "), sum, len(numStrs), ans),
+		Reasoning: fmt.Sprintf("average = %.2f / %d = %s", sum, len(numStrs), ans),
+	}
+}
+
+// ── Pattern: proportional word problem (N items cost $X, how much for M?) ──
+
+var reProportional = regexp.MustCompile(`(?i)([\d,]+(?:\.\d+)?)\s+(.+?)\s+(?:cost|price|worth|sell|buy|pay|spend|amount|payable)\s+\$?([\d,]+(?:\.\d+)?).*?(?:how much|cost|price|worth|pay|spend|amount).*?(\d+)\s+(.+?)(?:\?|$)`)
+
+func solveProportional(lower, original string) MathResult {
+	m := reProportional.FindStringSubmatch(original)
+	if len(m) < 6 {
+		return MathResult{}
+	}
+
+	qty1 := parseNumber(m[1])
+	price1 := parseNumber(m[3])
+	qty2 := parseNumber(m[4])
+	if qty1 == nil || price1 == nil || qty2 == nil || mustFloat(qty1) == 0 {
+		return MathResult{}
+	}
+
+	unitPrice := new(big.Rat).Quo(price1, qty1)
+	result := new(big.Rat).Mul(unitPrice, qty2)
+	ans := formatMoney(mustFloat(result))
+
+	return MathResult{
+		Solved:    true,
+		Answer:    fmt.Sprintf("%s: %s / %s = %s per unit, so %s units cost %s × %s = %s.", ans, m[3], m[1], formatMoney(mustFloat(unitPrice)), m[4], formatMoney(mustFloat(unitPrice)), m[4], ans),
+		Reasoning: fmt.Sprintf("($%s / %s) × %s = %s", m[3], m[1], m[4], ans),
+	}
 }

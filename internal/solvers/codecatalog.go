@@ -1,0 +1,146 @@
+package solvers
+
+import (
+	"strings"
+)
+
+type catalogEntry struct {
+	keywords []string
+	code     string
+}
+
+var codeCatalog = []catalogEntry{
+	{
+		keywords: []string{"reverse", "string"},
+		code: `def reverse_string(s):
+    return s[::-1]`,
+	},
+	{
+		keywords: []string{"factorial"},
+		code: `def factorial(n):
+    if n < 0:
+        raise ValueError("Factorial not defined for negative numbers")
+    result = 1
+    for i in range(2, n + 1):
+        result *= i
+    return result`,
+	},
+	{
+		keywords: []string{"prime"},
+		code: `def is_prime(n):
+    if n < 2:
+        return False
+    if n < 4:
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    i = 5
+    while i * i <= n:
+        if n % i == 0 or n % (i + 2) == 0:
+            return False
+        i += 6
+    return True`,
+	},
+	{
+		keywords: []string{"palindrome"},
+		code: `def is_palindrome(s):
+    cleaned = ''.join(c.lower() for c in s if c.isalnum())
+    return cleaned == cleaned[::-1]`,
+	},
+	{
+		keywords: []string{"fibonacci"},
+		code: `def fibonacci(n):
+    if n <= 0:
+        return 0
+    a, b = 0, 1
+    for _ in range(2, n + 1):
+        a, b = b, a + b
+    return b`,
+	},
+	{
+		keywords: []string{"anagram"},
+		code: `def is_anagram(s1, s2):
+    return sorted(s1.replace(" ", "").lower()) == sorted(s2.replace(" ", "").lower())`,
+	},
+	{
+		keywords: []string{"vowel", "count"},
+		code: `def count_vowels(s):
+    vowels = set("aeiouAEIOU")
+    return sum(1 for c in s if c in vowels)`,
+	},
+	{
+		keywords: []string{"fizzbuzz", "fizz", "buzz"},
+		code: `def fizzbuzz(n):
+    result = []
+    for i in range(1, n + 1):
+        if i % 15 == 0:
+            result.append("FizzBuzz")
+        elif i % 3 == 0:
+            result.append("Fizz")
+        elif i % 5 == 0:
+            result.append("Buzz")
+        else:
+            result.append(str(i))
+    return result`,
+	},
+	{
+		keywords: []string{"second largest", "second-largest", "second_largest"},
+		code: `def second_largest(nums):
+    if not nums or len(nums) < 2:
+        return None
+    first = second = float('-inf')
+    for n in nums:
+        if n > first:
+            second = first
+            first = n
+        elif n > second and n != first:
+            second = n
+    return second if second != float('-inf') else None`,
+	},
+	{
+		keywords: []string{"duplicate"},
+		code: `def has_duplicate(nums):
+    seen = set()
+    for n in nums:
+        if n in seen:
+            return True
+        seen.add(n)
+    return False`,
+	},
+	{
+		keywords: []string{"missing", "number"},
+		code: `def find_missing(nums, n):
+    total = n * (n + 1) // 2
+    return total - sum(nums)`,
+	},
+	{
+		keywords: []string{"two sum", "pair", "sum"},
+		code: `def two_sum(nums, target):
+    seen = {}
+    for i, n in enumerate(nums):
+        complement = target - n
+        if complement in seen:
+            return [seen[complement], i]
+        seen[n] = i
+    return []`,
+	},
+}
+
+// LookupCodeTemplate checks if a prompt matches a known pattern and returns
+// the pre-written code. Returns empty string on no match.
+func LookupCodeTemplate(prompt string) string {
+	lower := strings.ToLower(prompt)
+	for _, entry := range codeCatalog {
+		match := true
+		for _, kw := range entry.keywords {
+			if !strings.Contains(lower, kw) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return entry.code
+		}
+	}
+	return ""
+}

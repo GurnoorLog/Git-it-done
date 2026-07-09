@@ -78,31 +78,7 @@ var (
 	reLogicPuzzleFrame = regexp.MustCompile(`(?i)(five people|six people|four people|three people|\w+ is (?:not )?(?:next to|in position|immediately)|who is in position \d+|list the order from|order from (?:top|bottom)|which sport does|what does \w+ prefer|exactly one of the following|if it is raining|all mammals are|every card with|which of these conclusions|how does he get all three)`)
 )
 
-func categoryFromString(s string) Category {
-	switch s {
-	case "math":
-		return CategoryMath
-	case "sentiment":
-		return CategorySentiment
-	case "summarization":
-		return CategorySummarization
-	case "ner":
-		return CategoryNER
-	case "code_debugging":
-		return CategoryCodeDebugging
-	case "code_generation":
-		return CategoryCodeGeneration
-	case "logical":
-		return CategoryLogical
-	default:
-		return CategoryFactual
-	}
-}
-
 // Classify assigns a Category to a prompt using combined signal matching.
-// Regex patterns handle specific categories first (90%+ test accuracy).
-// The learned router model re-evaluates only when regex returns the
-// generic fallback (Factual), potentially catching tasks the regex missed.
 func Classify(prompt string) Category {
 	lower := strings.ToLower(prompt)
 
@@ -160,15 +136,6 @@ func Classify(prompt string) Category {
 	}
 
 	_ = lower // suppress unused warning
-
-	// ── Learned model re-evaluation (only when regex returned Factual).
-	if learnedRouter != nil {
-		pred := learnedRouter.predict(prompt)
-		if pred != "factual" && pred != "extraction" {
-			return categoryFromString(pred)
-		}
-	}
-
 	// ── Factual knowledge: default fallback.
 	return CategoryFactual
 }
