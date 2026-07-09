@@ -74,13 +74,35 @@ var (
 	reCodeGenInstruction = regexp.MustCompile(`(?i)\b(?:write a (?:function|class|program|script|method|module|python (?:function|script|class))|implement (?:a |an |the |this |that |the following |the given )?(?:\w+\s+){0,3}(?:function|class|algorithm|method|program|script|module|queue|stack|tree|sort|search|cache|list|map|heap)\b|create a (?:\w+\s+){0,2}(?:function|class|module|generator|script)\b|generate (?:code|a function|a class)|build a (?:function|class|api|module)|code that|function (?:that|which|to)|make a function|write (?:code|a generator))`)
 
 	// Logical/deductive: constraint puzzle framing.
-	reLogicConstraint = regexp.MustCompile(`(?i)\b(exactly one|if and only if|neither|either .{1,40} or \w+|not both|immediately (?:to the )?(?:left|right)|next to|adjacent to|must be (?:in|at|lying|sitting|playing)|cannot be (?:in|at|lying|sitting|playing)|always|never|constraint|puzzle|seating arrangement|deduce|conclude|follows that|therefore|thus|hence|who is in position|position \d+|seated in a (?:row|line)|standing in a (?:row|line)|stacked|tower of|barber|paradox|every card with|\bevery\b.{0,20}\bmust\b.{0,20}\bexactly\b|all labels are wrong|must (?:cross|transport|get all)|if it is raining|which of these conclusions must be true|every player must play|or both\b|each owns? a different|each has a different|different (?:pet|animal|object|item|color|car|house|job|sport))`)
-	reLogicPuzzleFrame = regexp.MustCompile(`(?i)(five people|six people|four people|three people|\w+ is (?:not )?(?:next to|in position|immediately)|who is in position \d+|list the order from|order from (?:top|bottom)|which sport does|what does \w+ prefer|exactly one of the following|if it is raining|all mammals are|every card with|which of these conclusions|how does he get all three|who owns|who has the|who lives in|three friends|four friends|two friends)`)
+	reLogicConstraint = regexp.MustCompile(`(?i)\b(exactly one|if and only if|neither|either .{1,40} or \w+|not both|immediately (?:to the )?(?:left|right)|next to|adjacent to|must be (?:in|at|lying|sitting|playing)|cannot be (?:in|at|lying|sitting|playing)|always|never|constraint|puzzle|seating arrangement|deduce|conclude|follows that|therefore|thus|hence|who is in position|position \d+|seated in a (?:row|line)|standing in a (?:row|line)|stacked|tower of|barber|paradox|every card with|\bevery\b.{0,20}\bmust\b.{0,20}\bexactly\b|all labels are wrong|must (?:cross|transport|get all)|if it is raining|which of these conclusions must be true|every player must play|or both\b)`)
+	reLogicPuzzleFrame = regexp.MustCompile(`(?i)(five people|six people|four people|three people|\w+ is (?:not )?(?:next to|in position|immediately)|who is in position \d+|list the order from|order from (?:top|bottom)|which sport does|what does \w+ prefer|exactly one of the following|if it is raining|all mammals are|every card with|which of these conclusions|how does he get all three)`)
 )
 
+func categoryFromString(s string) Category {
+	switch s {
+	case "math":
+		return CategoryMath
+	case "sentiment":
+		return CategorySentiment
+	case "summarization":
+		return CategorySummarization
+	case "ner":
+		return CategoryNER
+	case "code_debugging":
+		return CategoryCodeDebugging
+	case "code_generation":
+		return CategoryCodeGeneration
+	case "logical":
+		return CategoryLogical
+	default:
+		return CategoryFactual
+	}
+}
+
 // Classify assigns a Category to a prompt using combined signal matching.
-// The order of checks matters: more specific categories are checked before
-// the broad fallback (Factual).
+// Regex patterns handle specific categories first (90%+ test accuracy).
+// The learned router model re-evaluates only when regex returns the
+// generic fallback (Factual), potentially catching tasks the regex missed.
 func Classify(prompt string) Category {
 	lower := strings.ToLower(prompt)
 
@@ -138,6 +160,15 @@ func Classify(prompt string) Category {
 	}
 
 	_ = lower // suppress unused warning
+
+	// ── Learned model re-evaluation (only when regex returned Factual).
+	if learnedRouter != nil {
+		pred := learnedRouter.predict(prompt)
+		if pred != "factual" && pred != "extraction" {
+			return categoryFromString(pred)
+		}
+	}
+
 	// ── Factual knowledge: default fallback.
 	return CategoryFactual
 }

@@ -120,13 +120,22 @@ func (tm TierMap) SelectModelFallbacks(category string) []string {
 	}
 
 	switch category {
-	case "sentiment", "ner", "summarization", "factual":
+	// Simple tasks: cheap MoE is accurate enough, saves tokens for ranking.
+	case "sentiment", "ner":
 		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
+	// Summarization: MoE handles text tasks well, cheap on tokens.
+	case "summarization":
+		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
+	// Factual knowledge: flagship (minimax) is most accurate.
+	case "factual":
+		return collect(TierFlagship, TierDense, TierQuantized, TierCode, TierCheap)
+	// Code: code specialist first.
 	case "code_generation", "code_debugging":
-		return collect(TierCode, TierDense, TierFlagship, TierQuantized, TierCheap)
+		return collect(TierCode, TierFlagship, TierDense, TierQuantized, TierCheap)
+	// Math/Logic: need best reasoning, flagship first.
 	case "math", "logical":
-		return collect(TierDense, TierFlagship, TierQuantized, TierCode, TierCheap)
+		return collect(TierFlagship, TierDense, TierQuantized, TierCode, TierCheap)
 	default:
-		return collect(TierDense, TierFlagship, TierCheap, TierQuantized, TierCode)
+		return collect(TierFlagship, TierDense, TierCheap, TierQuantized, TierCode)
 	}
 }
