@@ -214,11 +214,9 @@ type indexedTask struct {
 // Non-batchable categories (summarization, code_*) are kept as singles.
 func groupPendingTasks(tasks []task.Task, pending []int) [][]indexedTask {
 	nonBatchable := map[classify.Category]bool{
-		classify.CategorySummarization: true,
-		classify.CategoryCodeDebugging: true,
+		classify.CategorySummarization:   true,
+		classify.CategoryCodeDebugging:   true,
 		classify.CategoryCodeGeneration: true,
-		classify.CategoryLogical:        true,
-		classify.CategoryMath:           true,
 	}
 	groups := make(map[classify.Category][]indexedTask)
 	for _, idx := range pending {

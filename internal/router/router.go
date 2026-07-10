@@ -434,17 +434,21 @@ func normalizeAnswer(ans string, cat classify.Category) string {
 		return ans
 
 	case classify.CategoryLogical:
-		// Extract "Answer: X" if model used our format.
 		if idx := strings.LastIndex(strings.ToLower(ans), "answer:"); idx >= 0 {
 			suffix := strings.TrimSpace(ans[idx+7:])
 			if suffix != "" {
-				return ans // Return the FULL answer (judge rewards reasoning)
+				return suffix
 			}
 		}
 		return ans
 
 	case classify.CategoryMath:
-		// Keep full answer — judge rewards showing work.
+		if idx := strings.LastIndex(strings.ToLower(ans), "final answer:"); idx >= 0 {
+			suffix := strings.TrimSpace(ans[idx+13:])
+			if suffix != "" {
+				return suffix
+			}
+		}
 		return ans
 
 	default:
@@ -469,18 +473,18 @@ func normalizeAnswer(ans string, cat classify.Category) string {
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {
-	perTask := 250
+	perTask := 200
 	switch cat {
 	case classify.CategorySentiment:
-		perTask = 80
-	case classify.CategoryNER, classify.CategorySummarization:
+		perTask = 60
+	case classify.CategoryNER:
+		perTask = 180
+	case classify.CategorySummarization:
+		perTask = 250
+	case classify.CategoryMath, classify.CategoryLogical:
 		perTask = 250
 	case classify.CategoryCodeDebugging, classify.CategoryCodeGeneration:
-		perTask = 700
-	case classify.CategoryLogical:
-		perTask = 800
-	case classify.CategoryMath:
-		perTask = 300
+		perTask = 600
 	}
-	return perTask*count + 200
+	return perTask * count
 }
