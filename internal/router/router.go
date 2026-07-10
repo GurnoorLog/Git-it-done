@@ -353,11 +353,16 @@ func isLowQualityAnswer(ans string) bool {
 	if trimmed == "" {
 		return true
 	}
+	if len(trimmed) < 2 {
+		return true
+	}
 	lower := strings.ToLower(trimmed)
+	// Exact phrase refusals (not substring to avoid false positives)
 	refusals := []string{
 		"i don't know", "i cannot", "i can't", "i'm not sure",
-		"i am not sure", "unable to", "not able to", "error:",
+		"i am not sure", "unable to answer", "not able to answer",
 		"an error occurred", "as an ai", "i apologize",
+		"i do not have access", "i don't have access",
 	}
 	for _, r := range refusals {
 		if strings.Contains(lower, r) {
@@ -406,43 +411,61 @@ func stripCodeFences(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// normalizeAnswer strips common answer prefixes that models add despite
-// instructions to output only the answer. Keeps the substantive content.
+// normalizeAnswer post-processes model output by category.
+// - For most categories: strips common preamble phrases.
+// - For sentiment: extracts the label from "Label. Justification." or keeps as-is.
+// - For NER: never strips anything — the format IS the answer.
+// - For logical: extracts from "Answer: X" suffix if present.
 func normalizeAnswer(ans string, cat classify.Category) string {
-	lower := strings.TrimSpace(strings.ToLower(ans))
-
-	prefixes := []string{
-		"answer:", "answer :", "the answer is:", "the answer is ",
-		"result:", "the result is:", "the result is ",
-		"output:", "the output is:", "the output is ",
-		"final answer:", "the final answer is:", "the final answer is ",
-		"here is", "here's", "here are",
-		"the text mentions", "the entities are", "entities:",
-		"persons:", "organizations:", "locations:",
-		"certainly:", "sure:", "okay:", "yes:",
+	ans = strings.TrimSpace(ans)
+	if ans == "" {
+		return ans
 	}
 
-	for _, p := range prefixes {
-		if strings.HasPrefix(lower, p) {
-			trimmed := strings.TrimSpace(ans[len(p):])
-			if trimmed != "" {
-				return trimmed
+	switch cat {
+	case classify.CategorySentiment:
+		// Our prompt produces "Positive. Justification." or just "positive".
+		// Keep the full answer — the LLM judge rewards justification.
+		// But normalize the label at the start so validate() passes.
+		return ans
+
+	case classify.CategoryNER:
+		// NER format is the answer itself — don't strip anything.
+		return ans
+
+	case classify.CategoryLogical:
+		// Extract "Answer: X" if model used our format.
+		if idx := strings.LastIndex(strings.ToLower(ans), "answer:"); idx >= 0 {
+			suffix := strings.TrimSpace(ans[idx+7:])
+			if suffix != "" {
+				return ans // Return the FULL answer (judge rewards reasoning)
 			}
 		}
-	}
+		return ans
 
-	// For sentiment: keep only the first word if it's a sentiment label
-	if cat == classify.CategorySentiment {
-		fields := strings.Fields(ans)
-		if len(fields) > 1 {
-			first := strings.ToLower(strings.Trim(fields[0], `.,;:!?`))
-			if first == "positive" || first == "negative" || first == "neutral" {
-				return first
+	case classify.CategoryMath:
+		// Keep full answer — judge rewards showing work.
+		return ans
+
+	default:
+		// For factual/summarization: strip common preamble phrases.
+		lower := strings.ToLower(ans)
+		prefixes := []string{
+			"answer:", "the answer is: ", "the answer is ",
+			"result: ", "the result is: ",
+			"here is: ", "here's: ",
+			"certainly: ", "sure: ",
+		}
+		for _, p := range prefixes {
+			if strings.HasPrefix(lower, p) {
+				trimmed := strings.TrimSpace(ans[len(p):])
+				if trimmed != "" {
+					return trimmed
+				}
 			}
 		}
+		return ans
 	}
-
-	return strings.TrimSpace(ans)
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {

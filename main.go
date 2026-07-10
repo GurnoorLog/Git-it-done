@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"track1-agent/internal/classify"
@@ -24,7 +26,26 @@ func main() {
 	}
 }
 
+func loadEnv() {
+	f, err := os.Open(".env")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if len(line) == 0 || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if parts := strings.SplitN(line, "=", 2); len(parts) == 2 {
+			os.Setenv(parts[0], parts[1])
+		}
+	}
+}
+
 func run() error {
+	loadEnv()
 	fwConfig, err := fireworks.LoadConfig()
 	if err != nil {
 		return err
@@ -193,9 +214,11 @@ type indexedTask struct {
 // Non-batchable categories (summarization, code_*) are kept as singles.
 func groupPendingTasks(tasks []task.Task, pending []int) [][]indexedTask {
 	nonBatchable := map[classify.Category]bool{
-		classify.CategorySummarization:     true,
-		classify.CategoryCodeDebugging:     true,
-		classify.CategoryCodeGeneration:   true,
+		classify.CategorySummarization: true,
+		classify.CategoryCodeDebugging: true,
+		classify.CategoryCodeGeneration: true,
+		classify.CategoryLogical:        true,
+		classify.CategoryMath:           true,
 	}
 	groups := make(map[classify.Category][]indexedTask)
 	for _, idx := range pending {

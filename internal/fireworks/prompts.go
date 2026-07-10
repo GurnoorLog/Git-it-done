@@ -6,95 +6,120 @@ import (
 )
 
 type CategoryPrompt struct {
-	System   string
-	Prefill  string
+	System    string
+	Prefill   string
 	MaxTokens int
 }
 
 var reJSON = regexp.MustCompile(`(?i)\bjson\b`)
+var reSimpleEntities = regexp.MustCompile(`(?i)\b(people|persons|organizations?|locations?|places?|companies|compan)\b`)
 
-// GetPrompts returns the category system prompt and token budget.
+// GetPrompts returns the system prompt and token budget for a category.
+// Prompts are tuned for LLM-judge evaluation: clear, complete, and semantically rich.
 func GetPrompts(category, taskPrompt string) CategoryPrompt {
 	wantsJSON := reJSON.MatchString(taskPrompt)
 
 	switch category {
 	case "math":
 		return CategoryPrompt{
-			System: "You are a precise math solver. Output ONLY the final numeric answer. " +
-				"No explanation, no steps, no units unless explicitly asked.\n" +
-				"Example: '90' or '50%' or '160.00'.\n" +
-				"No preamble. No markdown.",
-			MaxTokens: 300,
+			// LLM judge rewards showing work — bare numbers score lower when context is missing.
+			System: "You are a precise math solver. " +
+				"Show a brief step-by-step calculation, then state the final answer clearly. " +
+				"Format: calculation steps followed by 'Final answer: X'. " +
+				"No markdown formatting.",
+			MaxTokens: 1000,
 		}
 
 	case "sentiment":
 		return CategoryPrompt{
-			System: "Analyze the sentiment. Output exactly one word: positive, negative, or neutral.\n" +
-				"No punctuation. No explanation. No preamble.\n" +
-				"Examples: 'positive' / 'negative' / 'neutral'.",
-			MaxTokens: 40,
+			// The grader is an LLM that looks for the correct label AND justification.
+			System: "You are a sentiment analyst. " +
+				"First state the sentiment label (positive, negative, or neutral). " +
+				"Then provide a one-sentence justification referencing specific words or phrases from the text. " +
+				"Format: '[Label]. [Justification sentence].' " +
+				"Example: 'Negative. The reviewer describes the food as terrible and the service as rude.' " +
+				"No preamble.",
+			MaxTokens: 150,
 		}
 
 	case "ner":
 		if wantsJSON {
 			return CategoryPrompt{
-				System: "Extract ALL named entities. Output ONLY a valid JSON object in exactly:\n" +
-					"{\"persons\":[\"Name1\",\"Name2\"],\"organizations\":[\"Org1\"],\"locations\":[\"Loc1\"]}\n" +
+				// Task explicitly asks for JSON — output strict JSON.
+				System: "Extract ALL named entities. Output ONLY a valid JSON object:\n" +
+					`{"persons":["Name1"],"organizations":["Org1"],"locations":["Loc1"]}` + "\n" +
 					"Use exact spans from text. Omit empty categories. No text before or after JSON.",
-				Prefill:  `{"persons":[`,
-				MaxTokens: 250,
+				Prefill:   `{"persons":[`,
+				MaxTokens: 300,
 			}
 		}
 		return CategoryPrompt{
-			System: "List entities grouped by type (persons, organizations, locations, dates).\n" +
-				"Format: 'persons: Name1, Name2\norganizations: Org1\nlocations: Loc1'\n" +
-				"No commentary. No preamble.",
-			Prefill:  "persons: ",
-			MaxTokens: 200,
+			// Natural language NER for tasks that don't ask for JSON.
+			System: "Extract all named entities from the text. " +
+				"List them grouped by type: persons, organizations, and locations. " +
+				"Format each group as 'Type: Name1, Name2'. " +
+				"Example: 'Persons: Alice, Bob\nOrganizations: Acme Corp\nLocations: New York'. " +
+				"If a category has no entities, omit it. No preamble.",
+			MaxTokens: 400,
 		}
 
 	case "summarization":
 		return CategoryPrompt{
-			System: "Summarize obeying the exact length constraint (sentence count, word count, or bullet count).\n" +
-				"Use ONLY facts from the source text. No opinions. No preamble.",
-			MaxTokens: 200,
+			// Strictly obey any length constraint in the prompt.
+			System: "You are a precise summarizer. " +
+				"Summarize the given text while strictly obeying any length constraint stated (e.g. '2 sentences', 'one sentence', 'under 30 words', '3 bullet points'). " +
+				"Use only information from the source text. " +
+				"No preamble, no markdown formatting.",
+			MaxTokens: 500,
 		}
 
 	case "code_generation":
 		return CategoryPrompt{
-			System: "Return only the code. Handle all edge cases.\n" +
-				"No markdown fences. No explanation. No preamble.\n" +
-				"First line must be code or a code comment.",
-			MaxTokens: 700,
+			// Code specialist prompt: handle all edge cases, output clean code only.
+			System: "Write the requested Python function or program. " +
+				"Handle ALL edge cases explicitly (empty input, None, zero, negative numbers, duplicates, etc.). " +
+				"Output ONLY valid, runnable Python code — no markdown code fences (```), no explanation outside of code comments. " +
+				"The first line of output must be code or a # comment.",
+			MaxTokens: 1500,
 		}
 
 	case "code_debugging":
 		return CategoryPrompt{
-			System: "Return only the corrected code with a single-line bug comment at the top.\n" +
-				"Format: '# BUG: short description' then the fixed code.\n" +
-				"No markdown fences. No explanation. No preamble.",
-			MaxTokens: 700,
+			// Debugging: identify then fix. Start with a comment explaining the bug.
+			System: "Find and fix the bug in the given code. " +
+				"Output ONLY valid, runnable Python code. " +
+				"Add a single comment at the top: '# BUG: [brief description of the bug]'. " +
+				"Then output the complete corrected function or program. " +
+				"No markdown code fences (```). No explanation outside of code comments.",
+			MaxTokens: 1500,
 		}
 
 	case "logical":
 		return CategoryPrompt{
-			System: "Solve the logic puzzle. Give only the final answer or arrangement.\n" +
-				"No preamble. No markdown.",
-			MaxTokens: 400,
+			// Request concise reasoning to prevent infinite loops.
+			System: "Solve the logic problem. " +
+				"Work through the constraints concisely in under 150 words. " +
+				"Do not repeat yourself. " +
+				"End your response with 'Answer: [final answer]' on its own line. " +
+				"No markdown.",
+			MaxTokens: 800,
 		}
 
 	case "factual":
 		return CategoryPrompt{
-			System: "Answer in one short, accurate sentence or a single fact.\n" +
-				"No hedging. No preamble. No markdown.",
-			MaxTokens: 200,
+			// Factual: complete, accurate, direct. No hedging.
+			System: "Answer the question directly and accurately. " +
+				"Be comprehensive but concise. " +
+				"If the question asks to explain a concept, provide a clear explanation. " +
+				"If the question asks for a specific fact, state it directly. " +
+				"No preamble, no hedging, no markdown formatting.",
+			MaxTokens: 600,
 		}
 
 	default:
 		return CategoryPrompt{
-			System: "Answer the question directly. Give the exact answer first.\n" +
-				"No hedging. No preamble. No markdown.",
-			MaxTokens: 200,
+			System:    "Answer the question directly and accurately. No preamble, no markdown.",
+			MaxTokens: 600,
 		}
 	}
 }

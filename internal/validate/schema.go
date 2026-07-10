@@ -36,19 +36,28 @@ func Validate(category classify.Category, answer string) error {
 	}
 }
 
-// validateSentimentNL checks that the answer contains one of the three required sentiment labels.
-// Lenient: scans the FULL answer because reasoning models (e.g. kimi) emit chain-of-thought
-// before the final verdict. We extract the last occurrence of a sentiment keyword.
+// validateSentimentNL checks that the answer contains a sentiment label.
+// Accepts both:
+//   - "negative" (bare label)
+//   - "Negative. The reviewer describes..." (label + justification, LLM-judge preferred)
 func validateSentimentNL(answer string) error {
 	trimmed := strings.TrimSpace(answer)
 	if trimmed == "" {
 		return fmt.Errorf("sentiment answer is empty")
 	}
-	// Check if any sentiment label appears anywhere in the answer.
+	// Check first word (handles "Negative. justification..." format)
+	fields := strings.Fields(trimmed)
+	if len(fields) > 0 {
+		first := strings.ToLower(strings.Trim(fields[0], `.,;:!?`))
+		if first == "positive" || first == "negative" || first == "neutral" {
+			return nil
+		}
+	}
+	// Fallback: check anywhere in the answer (for verbose model output)
 	if reSentimentLabel.MatchString(trimmed) {
 		return nil
 	}
-	return fmt.Errorf("sentiment answer must contain 'positive', 'negative', or 'neutral'; got: %q", trimmed)
+	return fmt.Errorf("sentiment answer must start with 'positive', 'negative', or 'neutral'; got: %q", trimmed)
 }
 
 // validateNERNL checks that the answer is a non-empty natural-language sentence
