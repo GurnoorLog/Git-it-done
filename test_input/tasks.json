@@ -1,0 +1,4 @@
+[
+  {"task_id": "test_1", "prompt": "Classify the sentiment: 'This movie was absolutely fantastic.'"},
+  {"task_id": "test_2", "prompt": "What is the capital of France?"}
+]
