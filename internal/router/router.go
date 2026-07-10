@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"track1-agent/internal/cache"
 	"track1-agent/internal/classify"
 	"track1-agent/internal/fireworks"
 	"track1-agent/internal/solvers"
@@ -18,17 +19,25 @@ import (
 type Router struct {
 	fireworksClient *fireworks.Client
 	tierMap         fireworks.TierMap
+	cache           *cache.Cache
 }
 
 func New(fc *fireworks.Client, allowedModels []string) *Router {
 	return &Router{
 		fireworksClient: fc,
 		tierMap:         fireworks.ClassifyTiers(allowedModels),
+		cache:           cache.New(),
 	}
 }
 
 // Process routes a task through deterministic solvers, then Fireworks.
 func (r *Router) Process(ctx context.Context, t task.Task) (task.Result, error) {
+	// Check cache first
+	if cached, ok := r.cache.Get(t.Prompt); ok {
+		log.Printf("[Task %s] Cache hit\n", t.TaskID)
+		return task.Result{TaskID: t.TaskID, Answer: cached, ResolutionPath: "deterministic"}, nil
+	}
+
 	cat := classify.Classify(t.Prompt)
 	log.Printf("[Task %s] Category: %s\n", t.TaskID, cat)
 
@@ -152,6 +161,7 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 		}
 
 		log.Printf("[Task %s] Resolved: fireworks (model=%s, tokens=%d)\n", t.TaskID, targetModel, resp.TotalTokens)
+		r.cache.Set(t.Prompt, ans)
 		return task.Result{
 			TaskID:         t.TaskID,
 			Answer:         ans,
