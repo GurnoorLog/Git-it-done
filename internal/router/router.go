@@ -96,7 +96,8 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 
 	prompts := fireworks.GetPrompts(cat.String(), t.Prompt)
 	truncated := truncatePrompt(t.Prompt, cat)
-	basePrompt := fireworks.BuildPrompt(truncated, extraContext)
+	compressed := solvers.CompressPrompt(truncated)
+	basePrompt := fireworks.BuildPrompt(compressed, extraContext)
 	isCode := cat == classify.CategoryCodeGeneration || cat == classify.CategoryCodeDebugging
 
 	var lastErr error
