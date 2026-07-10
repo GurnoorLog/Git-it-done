@@ -96,7 +96,7 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 			Prompt:      basePrompt,
 			Prefill:     prompts.Prefill,
 			Temperature: 0.0,
-			MaxTokens:   getMaxTokens(cat),
+			MaxTokens:   prompts.MaxTokens,
 		}
 
 		resp, err := r.fireworksClient.Generate(ctx, req)
@@ -109,6 +109,17 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 		ans := resp.Answer
 		if isCode {
 			ans = stripCodeFences(ans)
+		}
+
+		// Quick quality check: reject empty, "I don't know", or error-like answers
+		if isLowQualityAnswer(ans) {
+			log.Printf("[Task %s] Low-quality answer from %s (trying next)\n", t.TaskID, targetModel)
+			lastErr = fmt.Errorf("low quality answer: %q", ans)
+			continue
+		}
+
+		// Code verification + test cases
+		if isCode {
 			ok, errMsg := solvers.VerifyCode(ctx, ans)
 			if ok && cat == classify.CategoryCodeGeneration {
 				if script, has := solvers.BuildSmokeTest(t.Prompt, ans); has {
@@ -126,25 +137,18 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 					continue
 				}
 				ans = stripCodeFences(resp.Answer)
+				if isLowQualityAnswer(ans) {
+					lastErr = fmt.Errorf("low quality answer after retry: %q", ans)
+					continue
+				}
 			}
 		}
 
+		// Schema validation: fail → try next model (not same model again)
 		if valErr := validate.Validate(cat, ans); valErr != nil {
-			log.Printf("[Task %s] Schema invalid on %s: %v (retrying)\n", t.TaskID, targetModel, valErr)
-			req.Prompt = basePrompt + "\n\nIMPORTANT: Your previous response failed format validation: " + valErr.Error() + ". Respond in the exact required format."
-			resp, err = r.fireworksClient.Generate(ctx, req)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-			ans = resp.Answer
-			if isCode {
-				ans = stripCodeFences(ans)
-			}
-			if valErr2 := validate.Validate(cat, ans); valErr2 != nil {
-				lastErr = valErr2
-				continue
-			}
+			log.Printf("[Task %s] Schema invalid on %s: %v (trying next model)\n", t.TaskID, targetModel, valErr)
+			lastErr = valErr
+			continue
 		}
 
 		log.Printf("[Task %s] Resolved: fireworks (model=%s, tokens=%d)\n", t.TaskID, targetModel, resp.TotalTokens)
@@ -333,12 +337,24 @@ func parseBatchAnswers(raw string) []string {
 	return result
 }
 
-func getBatchMaxTokens(cat classify.Category, count int) int {
-	perTask := getMaxTokens(cat)
-	total := perTask * count
-	// Add overhead for the combined prompt structure
-	total += 200
-	return total
+// isLowQualityAnswer catches empty, error-like, or refusal responses.
+func isLowQualityAnswer(ans string) bool {
+	trimmed := strings.TrimSpace(ans)
+	if trimmed == "" {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	refusals := []string{
+		"i don't know", "i cannot", "i can't", "i'm not sure",
+		"i am not sure", "unable to", "not able to", "error:",
+		"an error occurred", "as an ai", "i apologize",
+	}
+	for _, r := range refusals {
+		if strings.Contains(lower, r) {
+			return true
+		}
+	}
+	return false
 }
 
 func emergencyText() string {
@@ -380,21 +396,19 @@ func stripCodeFences(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func getMaxTokens(cat classify.Category) int {
+func getBatchMaxTokens(cat classify.Category, count int) int {
+	perTask := 250
 	switch cat {
 	case classify.CategorySentiment:
-		return 80
-	case classify.CategoryNER:
-		return 250
-	case classify.CategorySummarization:
-		return 200
+		perTask = 80
+	case classify.CategoryNER, classify.CategorySummarization:
+		perTask = 250
 	case classify.CategoryCodeDebugging, classify.CategoryCodeGeneration:
-		return 700
+		perTask = 700
 	case classify.CategoryLogical:
-		return 800
+		perTask = 800
 	case classify.CategoryMath:
-		return 300
-	default: // factual
-		return 250
+		perTask = 300
 	}
+	return perTask*count + 200
 }

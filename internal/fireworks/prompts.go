@@ -1,77 +1,111 @@
 package fireworks
 
 import (
+	"regexp"
 	"strings"
 )
 
 type CategoryPrompt struct {
-	System  string
-	Prefill string
+	System   string
+	Prefill  string
+	MaxTokens int
 }
 
-// GetPrompts returns the category system prompt. taskPrompt is inspected so
-// that explicit format requests in the task (e.g. "return as JSON") always win
-// over category defaults.
+var reJSON = regexp.MustCompile(`(?i)\bjson\b`)
+
+// GetPrompts returns the category system prompt and token budget.
 func GetPrompts(category, taskPrompt string) CategoryPrompt {
-	const terse = "Answer only, no preamble, no markdown formatting. All output must be in English."
-	wantsJSON := strings.Contains(strings.ToLower(taskPrompt), "json")
+	wantsJSON := reJSON.MatchString(taskPrompt)
 
 	switch category {
 	case "math":
 		return CategoryPrompt{
-			System: "You are a precise math solver. Think step by step, then output exactly one line: the final numeric answer, a colon, and a brief explanation. Example: '90.00: 25% of 120 is 30, so 120 - 30 = 90.' " + terse,
+			System: "You are a precise math solver. Compute step by step, then output exactly:\n" +
+				"[numeric answer]: [brief explanation]\n" +
+				"Example: '90.00: 25% of 120 is 30, so 120 - 30 = 90.'\n" +
+				"No preamble. No markdown. English only.",
+			MaxTokens: 300,
 		}
 
 	case "sentiment":
 		return CategoryPrompt{
-			System: "You are a sentiment analyst. " + terse + " Your response MUST begin with exactly one word: positive, negative, or neutral. Then a period and a one-sentence reason citing words from the text. Example: 'negative. The author criticizes the slow service and poor food quality.'",
-			Prefill: "",
+			System: "Analyze the sentiment. First word MUST be exactly: positive, negative, or neutral. Then '.' and a one-sentence reason citing words from the text.\n" +
+				"Examples:\n" +
+				"positive. The reviewer praises the fast delivery and quality.\n" +
+				"negative. The author criticizes the slow service and poor quality.\n" +
+				"neutral. The statement is factual without emotional language.\n" +
+				"No other format. No preamble. English only.",
+			MaxTokens: 80,
 		}
 
 	case "ner":
 		if wantsJSON {
 			return CategoryPrompt{
-				System: "You are an expert named-entity extractor. Output ONLY a valid JSON object in exactly the shape the task requests (e.g. {\"persons\":[],\"organizations\":[],\"locations\":[]}). Use exact spans from the text. No text before or after the JSON. Extract EVERY named entity — do not miss any.",
+				System: "Extract ALL named entities. Output ONLY a valid JSON object in exactly:\n" +
+					"{\"persons\":[\"Name1\",\"Name2\"],\"organizations\":[\"Org1\"],\"locations\":[\"Loc1\"]}\n" +
+					"Use exact spans from text. Omit empty categories. No text before or after JSON.",
+				MaxTokens: 250,
 			}
 		}
 		return CategoryPrompt{
-			System: "You are an expert named-entity extractor. List EVERY named entity in the text with its type in ONE sentence. Format: 'The text mentions [Name] (person), [Name] (organization), and [Name] (location).' Omit empty categories. Do not miss any entity. " + terse,
+			System: "List EVERY named entity with its type in ONE sentence. Format EXACTLY:\n" +
+				"'The text mentions [Name] (person), [Name] (organization), and [Name] (location).'\n" +
+				"Do not miss any entity. Omit empty categories. No preamble. English only.",
+			MaxTokens: 250,
 		}
 
 	case "summarization":
 		return CategoryPrompt{
-			System: "You are a precise summarizer. " + terse + " Read the length/format constraint in the task and follow it EXACTLY: 'two sentences' means exactly 2 sentences; 'under 15 words' means fewer than 15 words; 'three bullet points' means exactly 3 bullets. Use only facts from the source text. Do not add opinions or interpretations. Count your output before finalizing.",
+			System: "Summarize precisely. Follow the length constraint EXACTLY:\n" +
+				"- 'two sentences' = exactly 2 sentences\n" +
+				"- 'under 15 words' = fewer than 15 words\n" +
+				"- 'three bullet points' = exactly 3 bullets\n" +
+				"Use ONLY facts from the source text. No opinions. No interpretations.\n" +
+				"Count your output before finalizing. No preamble. English only.",
+			MaxTokens: 200,
 		}
 
 	case "code_generation":
 		return CategoryPrompt{
-			System: "Write the requested code. Handle edge cases (empty input, single element, ties, punctuation, negative numbers) per the spec. " +
-				"Output ONLY valid, runnable code. No markdown code fences. No explanation before or after. The first line must be code (or a code comment).",
+			System: "Write the requested code. Handle all edge cases: empty input, single element, ties, punctuation, negative numbers, None.\n" +
+				"Output ONLY valid, runnable Python code.\n" +
+				"No markdown fences. No explanation before or after.\n" +
+				"First line must be code or a code comment.",
+			MaxTokens: 700,
 		}
 
 	case "code_debugging":
 		return CategoryPrompt{
-			System: "Find and fix the bug in the given code. First identify the bug precisely, then output the complete fixed code. " +
-				"First line must be a comment naming the bug in one short phrase (e.g. '# BUG: off-by-one error in loop condition'). " +
-				"All remaining lines are the complete fixed code. " +
-				"Output ONLY valid code. No markdown code fences. No explanation before or after the code block.",
+			System: "Find and fix the bug precisely. Output format:\n" +
+				"First line: comment naming bug in one short phrase, e.g. '# BUG: off-by-one error in loop condition'\n" +
+				"All remaining lines: complete fixed code.\n" +
+				"No markdown fences. No explanation before or after the code block.",
+			MaxTokens: 700,
 		}
 
 	case "logical":
 		return CategoryPrompt{
-			System: "Solve the logic puzzle carefully. Think step by step, writing short reasoning lines. " +
-				"The very last line MUST be exactly: 'Final answer: ...' with the complete answer to the question asked. " +
-				"If the question asks for a name, order, or assignment, include all relevant details in the final answer. " +
-				"No markdown. All output in English.",
+			System: "Solve the logic puzzle step by step. Write short reasoning lines.\n" +
+				"The very last line MUST be exactly: 'Final answer: ...'\n" +
+				"Include all relevant details (name, order, assignment) in the final answer.\n" +
+				"No markdown. English only.",
+			MaxTokens: 800,
 		}
 
 	case "factual":
-		fallthrough
+		return CategoryPrompt{
+			System: "Answer accurately and completely.\n" +
+				"If asked for a list, number, or specific fact: give the exact answer first, then brief explanation if needed.\n" +
+				"No hedging ('I think', 'probably', 'I believe'). Precise facts only.\n" +
+				"No preamble. No markdown. English only.",
+			MaxTokens: 250,
+		}
+
 	default:
 		return CategoryPrompt{
-			System: "Answer the question accurately and completely. " +
-				"If the question asks for a list, number, or specific fact, give the exact answer first, then a brief explanation if helpful. " +
-				"No hedging ('I think', 'probably', 'I believe'). Respond with precise, factual information. " + terse,
+			System: "Answer the question directly. Give the exact answer first, then a brief explanation if needed.\n" +
+				"No hedging. No preamble. No markdown. English only.",
+			MaxTokens: 250,
 		}
 	}
 }
