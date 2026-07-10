@@ -20,63 +20,63 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 	switch category {
 	case "math":
 		return CategoryPrompt{
-			System: "Steps, then 'Final: X'. Under 15 words. No md.",
-			MaxTokens: 80,
+			System: "Solve concisely. Show steps then 'Final answer: X'. No markdown.",
+			MaxTokens: 300,
 		}
 
 	case "sentiment":
 		return CategoryPrompt{
-			System: "Label + reason. Under 10 words. No md.",
-			MaxTokens: 40,
+			System: "Output '[Label]. [One-sentence justification].' Label: positive, negative, neutral. Be concise.",
+			MaxTokens: 80,
 		}
 
 	case "ner":
 		if wantsJSON {
 			return CategoryPrompt{
-				System:    "JSON: {\"persons\":[],\"orgs\":[],\"locs\":[]}. Exact spans. Omit empty. Under 20 words total.",
+				System:    "Extract entities as JSON: {\"persons\":[],\"organizations\":[],\"locations\":[]}. Exact spans. Omit empty. No other text.",
 				Prefill:   `{"persons":[`,
-				MaxTokens: 100,
+				MaxTokens: 200,
 			}
 		}
 		return CategoryPrompt{
-			System: "Entities by type. 'T: N1,N2'. Omit empty. Under 15 words.",
-			MaxTokens: 120,
+			System: "List entities by type: persons, organizations, locations. Format 'Type: Name1, Name2'. Omit empty. Concise.",
+			MaxTokens: 250,
 		}
 
 	case "summarization":
 		return CategoryPrompt{
-			System: "Summarize. Obey length limit. Only facts. Under 30 words.",
-			MaxTokens: 200,
+			System: "Summarize concisely obeying any stated length constraint. Only facts from source. No preamble, no markdown.",
+			MaxTokens: 300,
 		}
 
 	case "code_generation":
 		return CategoryPrompt{
-			System: "Python. Handle edge cases. Code only — no ```, no explanation. First line: code or #comment. Under 40 lines.",
-			MaxTokens: 600,
+			System: "Write Python code. Handle all edge cases. Output ONLY code — no markdown fences, no explanation outside # comments. First line is code or #.",
+			MaxTokens: 800,
 		}
 
 	case "code_debugging":
 		return CategoryPrompt{
-			System: "Fix bug. Code only. '# BUG: ...' at top. No ```. Under 40 lines.",
-			MaxTokens: 600,
+			System: "Fix the bug. Output ONLY valid Python code. Top line: '# BUG: ...'. Then corrected function. No markdown fences.",
+			MaxTokens: 800,
 		}
 
 	case "logical":
 		return CategoryPrompt{
-			System: "Solve. Under 40 words. End 'Answer: X'. No md.",
-			MaxTokens: 120,
+			System: "Solve logically. Under 100 words. End with 'Answer: X'. No markdown.",
+			MaxTokens: 350,
 		}
 
 	case "factual":
 		return CategoryPrompt{
-			System: "Answer directly. Under 12 words. No md.",
-			MaxTokens: 60,
+			System: "Answer directly and concisely. No hedging. No preamble. No markdown.",
+			MaxTokens: 300,
 		}
 
 	default:
 		return CategoryPrompt{
-			System:    "Answer directly. Under 12 words. No md.",
-			MaxTokens: 60,
+			System:    "Answer directly and concisely. No preamble, no markdown.",
+			MaxTokens: 300,
 		}
 	}
 }

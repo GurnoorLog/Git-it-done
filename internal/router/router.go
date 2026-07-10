@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"track1-agent/internal/cache"
 	"track1-agent/internal/classify"
@@ -94,7 +95,8 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 	}
 
 	prompts := fireworks.GetPrompts(cat.String(), t.Prompt)
-	basePrompt := fireworks.BuildPrompt(t.Prompt, extraContext)
+	truncated := truncatePrompt(t.Prompt, cat)
+	basePrompt := fireworks.BuildPrompt(truncated, extraContext)
 	isCode := cat == classify.CategoryCodeGeneration || cat == classify.CategoryCodeDebugging
 
 	var lastErr error
@@ -473,18 +475,54 @@ func normalizeAnswer(ans string, cat classify.Category) string {
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {
-	perTask := 120
+	perTask := 200
 	switch cat {
 	case classify.CategorySentiment:
-		perTask = 30
+		perTask = 60
 	case classify.CategoryNER:
-		perTask = 80
+		perTask = 180
 	case classify.CategorySummarization:
-		perTask = 150
+		perTask = 250
 	case classify.CategoryMath, classify.CategoryLogical:
-		perTask = 80
+		perTask = 250
 	case classify.CategoryCodeDebugging, classify.CategoryCodeGeneration:
-		perTask = 500
+		perTask = 600
 	}
 	return perTask * count
+}
+
+// truncatePrompt truncates very long prompts to save input tokens.
+// Only affects abnormally long prompts (>5KB) — normal tasks pass through untouched.
+// Categories needing full text (ner, summarization, code) are never truncated.
+func truncatePrompt(prompt string, cat classify.Category) string {
+	if len(prompt) < 5000 {
+		return prompt
+	}
+
+	switch cat {
+	case classify.CategoryNER, classify.CategorySummarization,
+		classify.CategoryCodeGeneration, classify.CategoryCodeDebugging:
+		return prompt
+	}
+
+	keep := 4000
+	r := []rune(prompt)
+	if len(r) <= keep {
+		return prompt
+	}
+	// Truncate at a space boundary near the limit to avoid cutting words.
+	cut := keep
+	for cut > keep-200 && cut < len(r) && !unicode.IsSpace(r[cut]) {
+		cut++
+	}
+	if cut >= len(r) {
+		cut = keep
+	}
+	// Keep words after the space
+	for cut < len(r) && unicode.IsSpace(r[cut]) {
+		cut++
+	}
+	// Use the first `keep` runes (preserving the beginning where the question is).
+	// We truncate the end to save on context text.
+	return string(r[:cut]) + "\n\n[prompt truncated for length]"
 }
