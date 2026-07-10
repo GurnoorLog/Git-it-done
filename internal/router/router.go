@@ -473,18 +473,18 @@ func normalizeAnswer(ans string, cat classify.Category) string {
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {
-	perTask := 200
+	perTask := 120
 	switch cat {
 	case classify.CategorySentiment:
-		perTask = 60
+		perTask = 30
 	case classify.CategoryNER:
-		perTask = 180
+		perTask = 80
 	case classify.CategorySummarization:
-		perTask = 250
+		perTask = 150
 	case classify.CategoryMath, classify.CategoryLogical:
-		perTask = 250
+		perTask = 80
 	case classify.CategoryCodeDebugging, classify.CategoryCodeGeneration:
-		perTask = 600
+		perTask = 500
 	}
 	return perTask * count
 }

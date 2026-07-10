@@ -120,18 +120,16 @@ func (tm TierMap) SelectModelFallbacks(category string) []string {
 	}
 
 	switch category {
-	// Sentiment/NER/Summarization/Factual: Flagship (minimax-m3) is the
-	// most capable model per the reference solution's evaluation.
+	// Sentiment/NER/Summarization/Factual: Flagship first, 2 backups.
 	case "sentiment", "ner", "summarization", "factual":
-		return collect(TierFlagship, TierCode, TierDense, TierCheap, TierQuantized)
-	// Math: minimax has best general reasoning; kimi as backup.
-	// Logical: minimax as flagship; kimi as backup.
+		return collect(TierFlagship, TierCode, TierDense)
+	// Math/Logical: Flagship first, 2 backups.
 	case "math", "logical":
-		return collect(TierFlagship, TierCode, TierDense, TierQuantized, TierCheap)
-	// Code: code specialist (kimi) first, then minimax as backup.
+		return collect(TierFlagship, TierCode, TierDense)
+	// Code: code specialist first, 2 backups.
 	case "code_generation", "code_debugging":
-		return collect(TierCode, TierFlagship, TierDense, TierQuantized, TierCheap)
+		return collect(TierCode, TierFlagship, TierDense)
 	default:
-		return collect(TierFlagship, TierCode, TierDense, TierCheap, TierQuantized)
+		return collect(TierFlagship, TierCode, TierDense)
 	}
 }
