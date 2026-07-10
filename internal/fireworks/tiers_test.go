@@ -53,14 +53,14 @@ func TestSelectModel(t *testing.T) {
 		category string
 		want     string
 	}{
-		{"sentiment", "gemma-4-31b-it"},           // Prefers Dense (better accuracy)
-		{"ner", "gemma-4-31b-it-nvfp4"},           // Prefers Quantized
-		{"summarization", "gemma-4-31b-it-nvfp4"}, // Prefers Quantized
-		{"factual", "gemma-4-31b-it-nvfp4"},       // Prefers Quantized
-		{"code_generation", "kimi-k2p7-code"},     // Prefers Code
-		{"code_debugging", "kimi-k2p7-code"},      // Prefers Code
-		{"math", "gemma-4-31b-it"},                // Prefers Dense
-		{"logical", "gemma-4-31b-it"},             // Prefers Dense
+		{"sentiment", "minimax-m3"},           // Prefers Flagship
+		{"ner", "minimax-m3"},                 // Prefers Flagship
+		{"summarization", "minimax-m3"},       // Prefers Flagship
+		{"factual", "minimax-m3"},             // Prefers Flagship
+		{"code_generation", "kimi-k2p7-code"}, // Prefers Code
+		{"code_debugging", "kimi-k2p7-code"},  // Prefers Code
+		{"math", "minimax-m3"},                // Prefers Flagship
+		{"logical", "minimax-m3"},             // Prefers Flagship
 	}
 
 	for _, tc := range tests {

@@ -20,22 +20,19 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 	switch category {
 	case "math":
 		return CategoryPrompt{
-			System: "You are a precise math solver. Compute step by step, then output exactly:\n" +
-				"[numeric answer]: [brief explanation]\n" +
-				"Example: '90.00: 25% of 120 is 30, so 120 - 30 = 90.'\n" +
-				"No preamble. No markdown. English only.",
+			System: "You are a precise math solver. Output ONLY the final numeric answer. " +
+				"No explanation, no steps, no units unless explicitly asked.\n" +
+				"Example: '90' or '50%' or '160.00'.\n" +
+				"No preamble. No markdown.",
 			MaxTokens: 300,
 		}
 
 	case "sentiment":
 		return CategoryPrompt{
-			System: "Analyze the sentiment. First word MUST be exactly: positive, negative, or neutral. Then '.' and a one-sentence reason citing words from the text.\n" +
-				"Examples:\n" +
-				"positive. The reviewer praises the fast delivery and quality.\n" +
-				"negative. The author criticizes the slow service and poor quality.\n" +
-				"neutral. The statement is factual without emotional language.\n" +
-				"No other format. No preamble. English only.",
-			MaxTokens: 80,
+			System: "Analyze the sentiment. Output exactly one word: positive, negative, or neutral.\n" +
+				"No punctuation. No explanation. No preamble.\n" +
+				"Examples: 'positive' / 'negative' / 'neutral'.",
+			MaxTokens: 40,
 		}
 
 	case "ner":
@@ -48,64 +45,54 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 			}
 		}
 		return CategoryPrompt{
-			System: "List EVERY named entity with its type in ONE sentence. Format EXACTLY:\n" +
-				"'The text mentions [Name] (person), [Name] (organization), and [Name] (location).'\n" +
-				"Do not miss any entity. Omit empty categories. No preamble. English only.",
-			MaxTokens: 250,
+			System: "List entities grouped by type (persons, organizations, locations, dates).\n" +
+				"Format: 'persons: Name1, Name2\norganizations: Org1\nlocations: Loc1'\n" +
+				"No commentary. No preamble.",
+			MaxTokens: 200,
 		}
 
 	case "summarization":
 		return CategoryPrompt{
-			System: "Summarize precisely. Follow the length constraint EXACTLY:\n" +
-				"- 'two sentences' = exactly 2 sentences\n" +
-				"- 'under 15 words' = fewer than 15 words\n" +
-				"- 'three bullet points' = exactly 3 bullets\n" +
-				"Use ONLY facts from the source text. No opinions. No interpretations.\n" +
-				"Count your output before finalizing. No preamble. English only.",
+			System: "Summarize obeying the exact length constraint (sentence count, word count, or bullet count).\n" +
+				"Use ONLY facts from the source text. No opinions. No preamble.",
 			MaxTokens: 200,
 		}
 
 	case "code_generation":
 		return CategoryPrompt{
-			System: "Write the requested code. Handle all edge cases: empty input, single element, ties, punctuation, negative numbers, None.\n" +
-				"Output ONLY valid, runnable Python code.\n" +
-				"No markdown fences. No explanation before or after.\n" +
+			System: "Return only the code. Handle all edge cases.\n" +
+				"No markdown fences. No explanation. No preamble.\n" +
 				"First line must be code or a code comment.",
 			MaxTokens: 700,
 		}
 
 	case "code_debugging":
 		return CategoryPrompt{
-			System: "Find and fix the bug precisely. Output format:\n" +
-				"First line: comment naming bug in one short phrase, e.g. '# BUG: off-by-one error in loop condition'\n" +
-				"All remaining lines: complete fixed code.\n" +
-				"No markdown fences. No explanation before or after the code block.",
+			System: "Return only the corrected code with a single-line bug comment at the top.\n" +
+				"Format: '# BUG: short description' then the fixed code.\n" +
+				"No markdown fences. No explanation. No preamble.",
 			MaxTokens: 700,
 		}
 
 	case "logical":
 		return CategoryPrompt{
-			System: "Solve the logic puzzle step by step. Write short reasoning lines.\n" +
-				"The very last line MUST be exactly: 'Final answer: ...'\n" +
-				"Include all relevant details (name, order, assignment) in the final answer.\n" +
-				"No markdown. English only.",
-			MaxTokens: 800,
+			System: "Solve the logic puzzle. Give only the final answer or arrangement.\n" +
+				"No preamble. No markdown.",
+			MaxTokens: 400,
 		}
 
 	case "factual":
 		return CategoryPrompt{
-			System: "Answer accurately and completely.\n" +
-				"If asked for a list, number, or specific fact: give the exact answer first, then brief explanation if needed.\n" +
-				"No hedging ('I think', 'probably', 'I believe'). Precise facts only.\n" +
-				"No preamble. No markdown. English only.",
-			MaxTokens: 250,
+			System: "Answer in one short, accurate sentence or a single fact.\n" +
+				"No hedging. No preamble. No markdown.",
+			MaxTokens: 200,
 		}
 
 	default:
 		return CategoryPrompt{
-			System: "Answer the question directly. Give the exact answer first, then a brief explanation if needed.\n" +
-				"No hedging. No preamble. No markdown. English only.",
-			MaxTokens: 250,
+			System: "Answer the question directly. Give the exact answer first.\n" +
+				"No hedging. No preamble. No markdown.",
+			MaxTokens: 200,
 		}
 	}
 }

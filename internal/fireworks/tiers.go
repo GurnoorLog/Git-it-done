@@ -120,24 +120,17 @@ func (tm TierMap) SelectModelFallbacks(category string) []string {
 	}
 
 	switch category {
-	// Sentiment: needs nuanced understanding — use dense model for accuracy.
-	// Cheap MoE is less reliable on borderline cases.
-	case "sentiment":
-		return collect(TierDense, TierCheap, TierQuantized, TierFlagship, TierCode)
-	// NER/summarization: quantized gemma (gemma-4-31b-it-nvfp4) for accuracy,
-	// then fall back to cheap MoE if needed.
-	case "ner", "summarization":
-		return collect(TierQuantized, TierCheap, TierDense, TierFlagship, TierCode)
-	// Factual: quantized gemma first for accuracy, cheap MoE fallback.
-	case "factual":
-		return collect(TierQuantized, TierCheap, TierDense, TierFlagship, TierCode)
-	// Math/Logic: dense (gemma-4-31b-it) for reasoning, moderate tokens.
+	// Sentiment/NER/Summarization/Factual: Flagship (minimax-m3) is the
+	// most capable model per the reference solution's evaluation.
+	case "sentiment", "ner", "summarization", "factual":
+		return collect(TierFlagship, TierDense, TierCheap, TierQuantized, TierCode)
+	// Math/Logic: use Flagship (minimax-m3) as the primary reasoning model.
 	case "math", "logical":
-		return collect(TierDense, TierFlagship, TierQuantized, TierCode, TierCheap)
+		return collect(TierFlagship, TierDense, TierQuantized, TierCode, TierCheap)
 	// Code: code specialist (kimi) first.
 	case "code_generation", "code_debugging":
-		return collect(TierCode, TierDense, TierFlagship, TierQuantized, TierCheap)
+		return collect(TierCode, TierFlagship, TierDense, TierQuantized, TierCheap)
 	default:
-		return collect(TierDense, TierFlagship, TierCheap, TierQuantized, TierCode)
+		return collect(TierFlagship, TierDense, TierCheap, TierQuantized, TierCode)
 	}
 }

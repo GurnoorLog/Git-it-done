@@ -58,31 +58,39 @@ func run() error {
 	results := make([]task.Result, len(tasks))
 	pending := make([]int, 0, len(tasks))
 
-	// Phase 1: classify + deterministic solvers (fast, no API calls)
+	// Phase 1: first try logic solver on ALL tasks (pre-classification pass,
+	// matching the reference solution's approach)
 	for i, t := range tasks {
+		if res := solvers.SolveLogic(t.Prompt); res.Solved {
+			results[i] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
+			log.Printf("[Task %s] Resolved: deterministic (logic pre-classify)", t.TaskID)
+		} else {
+			pending = append(pending, i)
+		}
+	}
+
+	// Phase 1b: classify remaining tasks and try deterministic solvers
+	var stillPending []int
+	for _, idx := range pending {
+		t := tasks[idx]
 		cat := classify.Classify(t.Prompt)
 		var resolved bool
 		switch cat {
 		case classify.CategoryMath:
 			if res := solvers.SolveMath(t.Prompt); res.Solved {
-				results[i] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
-				resolved = true
-			}
-		case classify.CategoryLogical:
-			if res := solvers.SolveLogic(t.Prompt); res.Solved {
-				results[i] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
+				results[idx] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
 				resolved = true
 			}
 		case classify.CategorySentiment:
 			text := solvers.ExtractQuotedOrTail(t.Prompt)
 			if label, hits, confident := solvers.LexiconSentiment(text); confident {
-				results[i] = task.Result{TaskID: t.TaskID, Answer: solvers.BuildSentimentAnswer(label, hits), ResolutionPath: "deterministic"}
+				results[idx] = task.Result{TaskID: t.TaskID, Answer: solvers.BuildSentimentAnswer(label, hits), ResolutionPath: "deterministic"}
 				resolved = true
 			}
 		case classify.CategoryCodeGeneration:
 			if code := solvers.LookupCodeTemplate(t.Prompt); code != "" {
 				if ok, _ := solvers.VerifyCode(ctx, code); ok {
-					results[i] = task.Result{TaskID: t.TaskID, Answer: code, ResolutionPath: "deterministic"}
+					results[idx] = task.Result{TaskID: t.TaskID, Answer: code, ResolutionPath: "deterministic"}
 					resolved = true
 				}
 			}
@@ -90,16 +98,20 @@ func run() error {
 		if resolved {
 			log.Printf("[Task %s] Resolved: deterministic (%s)", t.TaskID, cat)
 		} else {
-			pending = append(pending, i)
+			stillPending = append(stillPending, idx)
 		}
 	}
+	pending = stillPending
 
 	log.Printf("Phase 1 complete: %d deterministic, %d pending Fireworks", len(tasks)-len(pending), len(pending))
 
 	if len(pending) > 0 {
-		// Phase 2: process each pending task individually through Fireworks.
-		// No batching — per-task calls are more reliable with model output format.
-		for _, idx := range pending {
+		// Phase 2: batch Fireworks calls. Group same-category tasks into
+		// batches (max 5 per batch), matching the reference solution.
+		batches := groupPendingTasks(tasks, pending)
+		log.Printf("Phase 2: %d tasks in %d batches", len(pending), len(batches))
+
+		for _, batch := range batches {
 			select {
 			case <-ctx.Done():
 				log.Printf("Deadline reached; marking remaining tasks as emergency")
@@ -112,12 +124,31 @@ func run() error {
 			default:
 			}
 
-			res, err := taskRouter.Process(ctx, tasks[idx])
-			if err != nil {
-				log.Printf("[Task %s] Fireworks failed: %v; using emergency", tasks[idx].TaskID, err)
-				results[idx] = emergencyResult(tasks[idx])
+			// Extract plain tasks for the router
+			plain := make([]task.Task, len(batch))
+			for i, it := range batch {
+				plain[i] = it.Task
+			}
+			cat := classify.Classify(plain[0].Prompt)
+
+			if len(batch) == 1 {
+				res, err := taskRouter.Process(ctx, plain[0])
+				if err != nil {
+					log.Printf("[Task %s] Fireworks failed: %v; using emergency", batch[0].TaskID, err)
+					results[batch[0].Index] = emergencyResult(batch[0].Task)
+				} else {
+					results[batch[0].Index] = res
+				}
 			} else {
-				results[idx] = res
+				batchResults := taskRouter.BatchProcess(ctx, plain, cat)
+				for _, br := range batchResults {
+					for _, it := range batch {
+						if it.TaskID == br.TaskID {
+							results[it.Index] = br
+							break
+						}
+					}
+				}
 			}
 		}
 
@@ -150,6 +181,44 @@ func emergencyResult(t task.Task) task.Result {
 		Answer:         "Unable to fully determine the answer within constraints.",
 		ResolutionPath: "emergency",
 	}
+}
+
+// indexedTask pairs a task with its position in the originals array.
+type indexedTask struct {
+	task.Task
+	Index int
+}
+
+// groupPendingTasks groups pending tasks by category, up to 5 per batch.
+// Non-batchable categories (summarization, code_*) are kept as singles.
+func groupPendingTasks(tasks []task.Task, pending []int) [][]indexedTask {
+	nonBatchable := map[classify.Category]bool{
+		classify.CategorySummarization:     true,
+		classify.CategoryCodeDebugging:     true,
+		classify.CategoryCodeGeneration:   true,
+	}
+	groups := make(map[classify.Category][]indexedTask)
+	for _, idx := range pending {
+		cat := classify.Classify(tasks[idx].Prompt)
+		groups[cat] = append(groups[cat], indexedTask{tasks[idx], idx})
+	}
+	var batches [][]indexedTask
+	for cat, items := range groups {
+		if nonBatchable[cat] || len(items) == 1 {
+			for _, it := range items {
+				batches = append(batches, []indexedTask{it})
+			}
+		} else {
+			for i := 0; i < len(items); i += 5 {
+				end := i + 5
+				if end > len(items) {
+					end = len(items)
+				}
+				batches = append(batches, items[i:end])
+			}
+		}
+	}
+	return batches
 }
 
 func printSummary(tasks []task.Task, results []task.Result, fwClient *fireworks.Client) {

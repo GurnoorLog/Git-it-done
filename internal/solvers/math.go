@@ -168,7 +168,7 @@ func solveOriginalPriceAfterDiscount(lower, original string) MathResult {
 	ans := formatMoney(mustFloat(originalPrice))
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: after a %s%% discount, the item costs %s, so original = %s / (1 - %s/100) = %s.", ans, m[1], m[2], m[2], m[1], ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("original price: %s / (1 - %s/100) = %s", m[2], m[1], ans),
 	}
 }
@@ -191,13 +191,9 @@ func solvePercentChange(lower, original string) MathResult {
 	pct := new(big.Rat).Mul(diff, big.NewRat(100, 1))
 	pct.Quo(pct, from)
 	ans := formatRat(pct) + "%"
-	changeType := "increase"
-	if mustFloat(diff) < 0 {
-		changeType = "decrease"
-	}
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: from %s to %s is a %s of %s, which is ((%s - %s) / %s) × 100 = %s%%.", ans, m[1], m[2], changeType, ans, m[2], m[1], m[1], formatRat(pct)),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("percent change: (%s-%s)/%s*100 = %s", m[2], m[1], m[1], ans),
 	}
 }
@@ -221,7 +217,7 @@ func solveSolveForBase(lower, original string) MathResult {
 	ans := formatRat(pct) + "%"
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: %s is (%s/%s) × 100 = %s%% of %s.", ans, m[1], m[1], m[2], formatRat(pct), m[2]),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("what percent: %s/%s*100 = %s", m[1], m[2], ans),
 	}
 }
@@ -260,7 +256,7 @@ func solvePercentageOf(lower, original string) MathResult {
 	ans := fmt.Sprintf("%.2f", mustFloat(result))
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: %s%% of %s = (%s/100) × %s = %s.", ans, m[1], m[2], m[1], m[2], ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("%s%% of %s = %s", m[1], m[2], ans),
 	}
 }
@@ -320,10 +316,9 @@ func solvePercentageChange(lower, original string) MathResult {
 			discount.Quo(discount, hundred)
 			result := new(big.Rat).Sub(base, discount)
 			ans := formatMoney(mustFloat(result))
-			discountAmt := formatMoney(mustFloat(discount))
 			return MathResult{
 				Solved:    true,
-				Answer:    fmt.Sprintf("%s: a %s%% discount on $%s is %s, so the final price is $%s − %s = %s.", ans, m[2], m[1], discountAmt, m[1], discountAmt, ans),
+				Answer:    ans,
 				Reasoning: fmt.Sprintf("%s - %s%% = %s", m[1], m[2], ans),
 			}
 		}
@@ -339,10 +334,9 @@ func solvePercentageChange(lower, original string) MathResult {
 			inc.Quo(inc, hundred)
 			result := new(big.Rat).Add(base, inc)
 			ans := formatMoney(mustFloat(result))
-			incAmt := formatMoney(mustFloat(inc))
 			return MathResult{
 				Solved:    true,
-				Answer:    fmt.Sprintf("%s: a %s%% increase on $%s adds %s, giving $%s + %s = %s.", ans, m[2], m[1], incAmt, m[1], incAmt, ans),
+				Answer:    ans,
 				Reasoning: fmt.Sprintf("%s + %s%% = %s", m[1], m[2], ans),
 			}
 		}
@@ -359,10 +353,9 @@ func solvePercentageChange(lower, original string) MathResult {
 			inc.Quo(inc, hundred)
 			result := new(big.Rat).Add(base, inc)
 			ans := formatMoney(mustFloat(result))
-			incAmt := formatMoney(mustFloat(inc))
 			return MathResult{
 				Solved:    true,
-				Answer:    fmt.Sprintf("%s: a %s%% increase on $%s adds %s, giving $%s + %s = %s.", ans, m[2], m[1], incAmt, m[1], incAmt, ans),
+				Answer:    ans,
 				Reasoning: fmt.Sprintf("%s + %s%% = %s", m[1], m[2], ans),
 			}
 		}
@@ -403,7 +396,7 @@ func solveSimpleArithmetic(lower, original string) MathResult {
 	ans := formatMoney(mustFloat(total))
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: multiplying each quantity by its unit price (and applying any stated tax) gives a total of %s.", ans, ans),
+		Answer:    ans,
 		Reasoning: "item-at-price multiplication",
 	}
 }
@@ -443,7 +436,7 @@ func solveWorkRate(lower, original string) MathResult {
 	ans := formatRat(newDays) + " days"
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: the total work is %s workers × %s days = %s worker-days, so %s workers need %s.", ans, m1[1], m1[2], formatRat(totalWork), formatRat(w2), ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("%s workers × %s days ÷ %s workers = %s", m1[1], m1[2], formatRat(w2), ans),
 	}
 }
@@ -526,7 +519,7 @@ func solvePercentConsumed(lower, original string) MathResult {
 	stepStr := strings.Join(steps, ", ")
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: starting with %s, %s, leaving %s.", ans, totalM[1], stepStr, ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("percent consumed from %s: %s", totalM[1], stepStr),
 	}
 }
@@ -567,7 +560,7 @@ func solveGrowthProjection(lower, original string) MathResult {
 	ans := fmt.Sprintf("%.4g%s", result, scale)
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: compounding %.4g%s at %.4g%% per year for %v years gives %.4g × (1 + %.4g/100)^%v = %s.", ans, b, scale, r, n, b, r, n, ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("compound growth: %.4g × (1+%.4g%%)^%v = %s", b, r, n, ans),
 	}
 }
@@ -607,7 +600,7 @@ func solveAverage(lower, original string) MathResult {
 	ans := fmt.Sprintf("%.2f", avg)
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: the average of [%s] is %.2f / %d = %s.", ans, strings.Join(numStrs, ", "), sum, len(numStrs), ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("average = %.2f / %d = %s", sum, len(numStrs), ans),
 	}
 }
@@ -635,7 +628,7 @@ func solveProportional(lower, original string) MathResult {
 
 	return MathResult{
 		Solved:    true,
-		Answer:    fmt.Sprintf("%s: %s / %s = %s per unit, so %s units cost %s × %s = %s.", ans, m[3], m[1], formatMoney(mustFloat(unitPrice)), m[4], formatMoney(mustFloat(unitPrice)), m[4], ans),
+		Answer:    ans,
 		Reasoning: fmt.Sprintf("($%s / %s) × %s = %s", m[3], m[1], m[4], ans),
 	}
 }

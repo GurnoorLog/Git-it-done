@@ -1,7 +1,6 @@
 package solvers
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -154,7 +153,7 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 		return "negative", uniqueHits(negHits), true
 	}
 	if posScore == 0 && negScore == 0 {
-		return "neutral", nil, true
+		return "neutral", nil, false
 	}
 
 	// Mixed signal: require dominant polarity to lead by at least 2:1 ratio
@@ -194,21 +193,9 @@ func ParseSentimentLabel(s string) string {
 	return found
 }
 
-// BuildSentimentAnswer produces a judge-friendly one-line answer.
+// BuildSentimentAnswer produces a simple answer — just the label.
 func BuildSentimentAnswer(label string, hits []string) string {
-	if len(hits) == 0 {
-		return fmt.Sprintf("%s. The text expresses a clearly %s tone overall.", label, label)
-	}
-	max := len(hits)
-	if max > 3 {
-		max = 3
-	}
-	quoted := make([]string, 0, max)
-	for _, h := range hits[:max] {
-		quoted = append(quoted, "\""+h+"\"")
-	}
-	return fmt.Sprintf("%s. The sentiment is %s, conveyed by strongly %s language such as %s with no opposing cues.",
-		label, label, label, strings.Join(quoted, " and "))
+	return label
 }
 
 // ExtractQuotedOrTail returns the text being analysed.
