@@ -124,12 +124,13 @@ func (tm TierMap) SelectModelFallbacks(category string) []string {
 	// Cheap MoE is less reliable on borderline cases.
 	case "sentiment":
 		return collect(TierDense, TierCheap, TierQuantized, TierFlagship, TierCode)
-	// NER/summarization: cheap MoE handles these well.
+	// NER/summarization: quantized gemma (gemma-4-31b-it-nvfp4) for accuracy,
+	// then fall back to cheap MoE if needed.
 	case "ner", "summarization":
-		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
-	// Factual: cheap MoE (gemma-4-26b-a4b-it) — low tokens, sufficient accuracy.
+		return collect(TierQuantized, TierCheap, TierDense, TierFlagship, TierCode)
+	// Factual: quantized gemma first for accuracy, cheap MoE fallback.
 	case "factual":
-		return collect(TierCheap, TierQuantized, TierDense, TierFlagship, TierCode)
+		return collect(TierQuantized, TierCheap, TierDense, TierFlagship, TierCode)
 	// Math/Logic: dense (gemma-4-31b-it) for reasoning, moderate tokens.
 	case "math", "logical":
 		return collect(TierDense, TierFlagship, TierQuantized, TierCode, TierCheap)

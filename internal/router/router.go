@@ -392,17 +392,17 @@ func (r *Router) Emergency(ctx context.Context, t task.Task) task.Result {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-var reFence = regexp.MustCompile(`(?s)^\s*` + "```" + `[a-zA-Z]*\n?(.*?)\n?` + "```" + `\s*$`)
-var reOpenFence = regexp.MustCompile(`^` + "```" + `[a-zA-Z]*\n`)
+var reFence = regexp.MustCompile("(?s)```[a-zA-Z]*\n?(.*?)```")
+var reFenceLine = regexp.MustCompile("(?m)^```.*$")
 
 func stripCodeFences(s string) string {
 	s = strings.TrimSpace(s)
+	// Find ANY fenced code block (not just full-string match)
 	if m := reFence.FindStringSubmatch(s); len(m) == 2 {
 		return strings.TrimSpace(m[1])
 	}
-	if reOpenFence.MatchString(s) {
-		s = reOpenFence.ReplaceAllString(s, "")
-	}
+	// Remove any remaining stray fence lines
+	s = reFenceLine.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
 }
 

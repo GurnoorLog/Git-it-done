@@ -154,7 +154,7 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 		return "negative", uniqueHits(negHits), true
 	}
 	if posScore == 0 && negScore == 0 {
-		return "neutral", nil, false
+		return "neutral", nil, true
 	}
 
 	// Mixed signal: require dominant polarity to lead by at least 2:1 ratio

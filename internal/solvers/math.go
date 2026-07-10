@@ -69,6 +69,24 @@ func SolveMath(prompt string) MathResult {
 		}
 		return r
 	}
+	if r := solveOriginalPriceAfterDiscount(lower, prompt); r.Solved {
+		if !sanityCheckNonNegative(r.Answer) {
+			return MathResult{Solved: false, Reasoning: "sanity check failed: original price after discount was negative; escalating"}
+		}
+		return r
+	}
+	if r := solvePercentChange(lower, prompt); r.Solved {
+		if !sanityCheckNonNegative(r.Answer) {
+			return MathResult{Solved: false, Reasoning: "sanity check failed: percent change was negative; escalating"}
+		}
+		return r
+	}
+	if r := solveSolveForBase(lower, prompt); r.Solved {
+		if !sanityCheckNonNegative(r.Answer) {
+			return MathResult{Solved: false, Reasoning: "sanity check failed: base from percent was negative; escalating"}
+		}
+		return r
+	}
 
 	return MathResult{Solved: false, Reasoning: "could not confidently parse problem structure"}
 }
@@ -117,6 +135,95 @@ func parseNumber(s string) *big.Rat {
 		return nil
 	}
 	return new(big.Rat).SetFloat64(f)
+}
+
+// ── Pattern: find original price after a discount ──────────────────────────
+// "An item costs $120 after a 25% discount. What was the original price?"
+// formula: original = final / (1 - pct/100)
+var reOriginalPrice = regexp.MustCompile(`(?i)(?:after|with|following)\s+(?:a\s+)?([\d,]+(?:\.\d+)?)\s*%\s*(?:discount|off|reduction).*?(?:cost|price|worth|pay|now|final|sale).*?\$?([\d,]+(?:\.\d+)?)`)
+
+// Also match "25% off ... after the discount ... $120"
+var reOriginalPriceReverse = regexp.MustCompile(`(?i)([\d,]+(?:\.\d+)?)\s*%\s*(?:discount|off|reduction).*?(?:after|with|following).*?(?:cost|price|worth|pay|now|final|sale).*?\$?([\d,]+(?:\.\d+)?)`)
+
+func solveOriginalPriceAfterDiscount(lower, original string) MathResult {
+	m := reOriginalPrice.FindStringSubmatch(original)
+	if len(m) < 3 {
+		m = reOriginalPriceReverse.FindStringSubmatch(original)
+	}
+	if len(m) < 3 {
+		return MathResult{}
+	}
+	pct := parseNumber(m[1])
+	finalPrice := parseNumber(m[2])
+	if pct == nil || finalPrice == nil {
+		return MathResult{}
+	}
+	hundred := new(big.Rat).SetInt64(100)
+	factor := new(big.Rat).Sub(hundred, pct)
+	factor.Quo(factor, hundred)
+	if mustFloat(factor) == 0 {
+		return MathResult{}
+	}
+	originalPrice := new(big.Rat).Quo(finalPrice, factor)
+	ans := formatMoney(mustFloat(originalPrice))
+	return MathResult{
+		Solved:    true,
+		Answer:    fmt.Sprintf("%s: after a %s%% discount, the item costs %s, so original = %s / (1 - %s/100) = %s.", ans, m[1], m[2], m[2], m[1], ans),
+		Reasoning: fmt.Sprintf("original price: %s / (1 - %s/100) = %s", m[2], m[1], ans),
+	}
+}
+
+// ── Pattern: percentage change from X to Y ─────────────────────────────────
+// "What is the percentage increase from 50 to 75?" → (75-50)/50 * 100 = 50%
+var rePercentChange = regexp.MustCompile(`(?i)(?:what|find|calculate|compute|determine)\s+(?:is\s+)?(?:the\s+)?(?:percentage|percent)\s+(?:increase|decrease|change|rise|drop).*?(?:from|of)\s+(\d+(?:\.\d+)?)\s+(?:to|and)\s+(\d+(?:\.\d+)?)`)
+
+func solvePercentChange(lower, original string) MathResult {
+	m := rePercentChange.FindStringSubmatch(original)
+	if len(m) < 3 {
+		return MathResult{}
+	}
+	from := parseNumber(m[1])
+	to := parseNumber(m[2])
+	if from == nil || to == nil || mustFloat(from) == 0 {
+		return MathResult{}
+	}
+	diff := new(big.Rat).Sub(to, from)
+	pct := new(big.Rat).Mul(diff, big.NewRat(100, 1))
+	pct.Quo(pct, from)
+	ans := formatRat(pct) + "%"
+	changeType := "increase"
+	if mustFloat(diff) < 0 {
+		changeType = "decrease"
+	}
+	return MathResult{
+		Solved:    true,
+		Answer:    fmt.Sprintf("%s: from %s to %s is a %s of %s, which is ((%s - %s) / %s) × 100 = %s%%.", ans, m[1], m[2], changeType, ans, m[2], m[1], m[1], formatRat(pct)),
+		Reasoning: fmt.Sprintf("percent change: (%s-%s)/%s*100 = %s", m[2], m[1], m[1], ans),
+	}
+}
+
+// ── Pattern: X is what percent of Y? ───────────────────────────────────────
+// "50 is what percent of 200?" → 50/200 * 100 = 25%
+var reWhatPercent = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s+(?:is|are)\s+(?:what|which)\s+percent\s+of\s+(\d+(?:\.\d+)?)`)
+
+func solveSolveForBase(lower, original string) MathResult {
+	m := reWhatPercent.FindStringSubmatch(original)
+	if len(m) < 3 {
+		return MathResult{}
+	}
+	part := parseNumber(m[1])
+	whole := parseNumber(m[2])
+	if part == nil || whole == nil || mustFloat(whole) == 0 {
+		return MathResult{}
+	}
+	pct := new(big.Rat).Mul(part, big.NewRat(100, 1))
+	pct.Quo(pct, whole)
+	ans := formatRat(pct) + "%"
+	return MathResult{
+		Solved:    true,
+		Answer:    fmt.Sprintf("%s: %s is (%s/%s) × 100 = %s%% of %s.", ans, m[1], m[1], m[2], formatRat(pct), m[2]),
+		Reasoning: fmt.Sprintf("what percent: %s/%s*100 = %s", m[1], m[2], ans),
+	}
 }
 
 // formatRat converts a *big.Rat to a human-friendly decimal string (up to 6 dp, trailing zeros trimmed).

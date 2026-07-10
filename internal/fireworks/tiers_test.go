@@ -54,9 +54,9 @@ func TestSelectModel(t *testing.T) {
 		want     string
 	}{
 		{"sentiment", "gemma-4-31b-it"},           // Prefers Dense (better accuracy)
-		{"ner", "gemma-4-26b-a4b-it"},             // Prefers Cheap
-		{"summarization", "gemma-4-26b-a4b-it"},   // Prefers Cheap
-		{"factual", "gemma-4-26b-a4b-it"},         // Prefers Cheap
+		{"ner", "gemma-4-31b-it-nvfp4"},           // Prefers Quantized
+		{"summarization", "gemma-4-31b-it-nvfp4"}, // Prefers Quantized
+		{"factual", "gemma-4-31b-it-nvfp4"},       // Prefers Quantized
 		{"code_generation", "kimi-k2p7-code"},     // Prefers Code
 		{"code_debugging", "kimi-k2p7-code"},      // Prefers Code
 		{"math", "gemma-4-31b-it"},                // Prefers Dense
