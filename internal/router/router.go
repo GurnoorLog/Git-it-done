@@ -95,9 +95,7 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 	}
 
 	prompts := fireworks.GetPrompts(cat.String(), t.Prompt)
-	truncated := truncatePrompt(t.Prompt, cat)
-	compressed := solvers.CompressPrompt(truncated)
-	basePrompt := fireworks.BuildPrompt(compressed, extraContext)
+	basePrompt := fireworks.BuildPrompt(t.Prompt, extraContext)
 	isCode := cat == classify.CategoryCodeGeneration || cat == classify.CategoryCodeDebugging
 
 	var lastErr error
@@ -123,6 +121,18 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 			ans = stripCodeFences(ans)
 		} else {
 			ans = normalizeAnswer(ans, cat)
+		}
+
+		// If truncated, try to salvage before retrying
+		if resp.Truncated {
+			// normalizeAnswer already ran above — check if it extracted a valid answer
+			if !isLowQualityAnswer(ans) && ans != "" {
+				log.Printf("[Task %s] Salvaged partial response from %s\n", t.TaskID, targetModel)
+			} else {
+				log.Printf("[Task %s] Length-truncated on %s, salvage failed (trying next)\n", t.TaskID, targetModel)
+				lastErr = fmt.Errorf("low quality after partial salvage: %q", ans)
+				continue
+			}
 		}
 		if isLowQualityAnswer(ans) {
 			log.Printf("[Task %s] Low-quality answer from %s (trying next)\n", t.TaskID, targetModel)

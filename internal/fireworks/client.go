@@ -154,6 +154,7 @@ type GenerateRequest struct {
 type GenerateResponse struct {
 	Answer      string
 	TotalTokens int
+	Truncated   bool // true when finish_reason was "length"
 }
 
 // VerifyAnswer asks Fireworks to check if a proposed answer is fully correct.
@@ -305,10 +306,18 @@ func (c *Client) Generate(ctx context.Context, req GenerateRequest) (GenerateRes
 
 	ch := chatResp.Choices[0]
 
-	// Detect truncated response — retry will happen in the caller
+	// Return partial response on length — caller can salvage or retry
 	if ch.FinishReason == "length" {
-		log.Printf("[Fireworks] model=%s finish_reason=length (truncated)", req.Model)
-		return GenerateResponse{}, fmt.Errorf("response truncated (finish_reason=length)")
+		partial := strings.TrimSpace(ch.Message.Content)
+		if partial == "" {
+			partial = strings.TrimSpace(ch.Message.ReasoningContent)
+		}
+		log.Printf("[Fireworks] model=%s partial=%d chars (finish_reason=length)", req.Model, len(partial))
+		return GenerateResponse{
+			Answer:      partial,
+			TotalTokens: chatResp.Usage.TotalTokens,
+			Truncated:   true,
+		}, nil
 	}
 
 	// Use reasoning_content if content is empty (some models put answer there)
