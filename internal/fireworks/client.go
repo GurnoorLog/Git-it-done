@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -114,19 +115,27 @@ type message struct {
 }
 
 type chatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []message `json:"messages"`
-	Temperature float64   `json:"temperature"`
-	MaxTokens   int       `json:"max_tokens"`
+	Model           string    `json:"model"`
+	Messages        []message `json:"messages"`
+	Temperature     float64   `json:"temperature"`
+	MaxTokens       int       `json:"max_tokens"`
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
+}
+
+type choice struct {
+	Index        int     `json:"index"`
+	FinishReason string  `json:"finish_reason"`
+	Message      msgContent `json:"message"`
+}
+
+type msgContent struct {
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 type chatResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-	Usage struct {
+	Choices []choice `json:"choices"`
+	Usage   struct {
 		TotalTokens int `json:"total_tokens"`
 	} `json:"usage"`
 }
@@ -167,6 +176,15 @@ func (c *Client) VerifyAnswer(ctx context.Context, taskPrompt string, proposedAn
 	
 	isCorrect := strings.HasPrefix(strings.ToUpper(strings.TrimSpace(resp.Answer)), "YES")
 	return isCorrect, resp.TotalTokens, nil
+}
+
+// stripThinkBlocks removes <think>...</think> blocks from model output.
+// Some reasoning models emit chain-of-thought inside these tags even when
+// reasoning_effort is set to none. We strip them as a safety net.
+var reThinkBlock = regexp.MustCompile(`(?is)<think>.*?</think>`)
+
+func stripThinkBlocks(s string) string {
+	return strings.TrimSpace(reThinkBlock.ReplaceAllString(s, ""))
 }
 
 // PickBestAnswer asks Fireworks to choose the better of two candidate answers.
@@ -220,10 +238,11 @@ func (c *Client) Generate(ctx context.Context, req GenerateRequest) (GenerateRes
 	}
 
 	body := chatRequest{
-		Model:       req.Model,
-		Messages:    messages,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:           req.Model,
+		Messages:        messages,
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		ReasoningEffort: "none",
 	}
 
 	bodyBytes, err := json.Marshal(body)
@@ -284,7 +303,23 @@ func (c *Client) Generate(ctx context.Context, req GenerateRequest) (GenerateRes
 		return GenerateResponse{}, fmt.Errorf("fireworks api returned no choices")
 	}
 
-	content := chatResp.Choices[0].Message.Content
+	ch := chatResp.Choices[0]
+
+	// Detect truncated response — retry will happen in the caller
+	if ch.FinishReason == "length" {
+		log.Printf("[Fireworks] model=%s finish_reason=length (truncated)", req.Model)
+		return GenerateResponse{}, fmt.Errorf("response truncated (finish_reason=length)")
+	}
+
+	// Use reasoning_content if content is empty (some models put answer there)
+	content := strings.TrimSpace(ch.Message.Content)
+	if content == "" {
+		content = strings.TrimSpace(ch.Message.ReasoningContent)
+	}
+
+	// Strip any think blocks that leaked through despite reasoning_effort: none
+	content = stripThinkBlocks(content)
+
 	// If we used prefill, prepend it to the response (APIs often omit it from the response body).
 	if req.Prefill != "" && !strings.HasPrefix(content, req.Prefill) {
 		content = req.Prefill + content
