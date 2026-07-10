@@ -118,9 +118,9 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 		ans := resp.Answer
 		if isCode {
 			ans = stripCodeFences(ans)
+		} else {
+			ans = normalizeAnswer(ans, cat)
 		}
-
-		// Quick quality check: reject empty, "I don't know", or error-like answers
 		if isLowQualityAnswer(ans) {
 			log.Printf("[Task %s] Low-quality answer from %s (trying next)\n", t.TaskID, targetModel)
 			lastErr = fmt.Errorf("low quality answer: %q", ans)
@@ -404,6 +404,45 @@ func stripCodeFences(s string) string {
 	// Remove any remaining stray fence lines
 	s = reFenceLine.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
+}
+
+// normalizeAnswer strips common answer prefixes that models add despite
+// instructions to output only the answer. Keeps the substantive content.
+func normalizeAnswer(ans string, cat classify.Category) string {
+	lower := strings.TrimSpace(strings.ToLower(ans))
+
+	prefixes := []string{
+		"answer:", "answer :", "the answer is:", "the answer is ",
+		"result:", "the result is:", "the result is ",
+		"output:", "the output is:", "the output is ",
+		"final answer:", "the final answer is:", "the final answer is ",
+		"here is", "here's", "here are",
+		"the text mentions", "the entities are", "entities:",
+		"persons:", "organizations:", "locations:",
+		"certainly:", "sure:", "okay:", "yes:",
+	}
+
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			trimmed := strings.TrimSpace(ans[len(p):])
+			if trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+
+	// For sentiment: keep only the first word if it's a sentiment label
+	if cat == classify.CategorySentiment {
+		fields := strings.Fields(ans)
+		if len(fields) > 1 {
+			first := strings.ToLower(strings.Trim(fields[0], `.,;:!?`))
+			if first == "positive" || first == "negative" || first == "neutral" {
+				return first
+			}
+		}
+	}
+
+	return strings.TrimSpace(ans)
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {

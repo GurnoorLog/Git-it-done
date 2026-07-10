@@ -41,6 +41,7 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 				System: "Extract ALL named entities. Output ONLY a valid JSON object in exactly:\n" +
 					"{\"persons\":[\"Name1\",\"Name2\"],\"organizations\":[\"Org1\"],\"locations\":[\"Loc1\"]}\n" +
 					"Use exact spans from text. Omit empty categories. No text before or after JSON.",
+				Prefill:  `{"persons":[`,
 				MaxTokens: 250,
 			}
 		}
@@ -48,6 +49,7 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 			System: "List entities grouped by type (persons, organizations, locations, dates).\n" +
 				"Format: 'persons: Name1, Name2\norganizations: Org1\nlocations: Loc1'\n" +
 				"No commentary. No preamble.",
+			Prefill:  "persons: ",
 			MaxTokens: 200,
 		}
 
