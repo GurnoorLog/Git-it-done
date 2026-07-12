@@ -465,6 +465,12 @@ func solvePercentConsumed(lower, original string) MathResult {
 		return MathResult{}
 	}
 
+	// Escalate multi-quarter problems (Q1, Q2, etc.) — our solver can't chain operations.
+	reQuarter := regexp.MustCompile(`(?i)\b[Qq]\d+\b`)
+	if reQuarter.MatchString(lower) {
+		return MathResult{}
+	}
+
 	// Find all percentage consumption events.
 	pctMatches := rePctConsumed.FindAllStringSubmatch(original, -1)
 	if len(pctMatches) == 0 {

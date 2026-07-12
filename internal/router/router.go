@@ -62,14 +62,6 @@ func (r *Router) Process(ctx context.Context, t task.Task) (task.Result, error) 
 			return task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}, nil
 		}
 
-	case classify.CategorySentiment:
-		text := solvers.ExtractQuotedOrTail(t.Prompt)
-		label, hits, confident := solvers.LexiconSentiment(text)
-		if confident {
-			log.Printf("[Task %s] Resolved: deterministic sentiment (%s)\n", t.TaskID, label)
-			return task.Result{TaskID: t.TaskID, Answer: solvers.BuildSentimentAnswer(label, hits), ResolutionPath: "deterministic"}, nil
-		}
-
 	case classify.CategoryCodeDebugging:
 		lintRes := solvers.StaticAnalyze(t.Prompt)
 		if lintRes.AutoFixed && lintRes.FixedCode != "" {
@@ -86,6 +78,26 @@ func (r *Router) Process(ctx context.Context, t task.Task) (task.Result, error) 
 				log.Printf("[Task %s] Resolved: code catalog (%s)\n", t.TaskID, "matched template")
 				return task.Result{TaskID: t.TaskID, Answer: code, ResolutionPath: "deterministic"}, nil
 			}
+		}
+	}
+
+	// Phase 1.5: try local model for categories it handles well (before Fireworks)
+	if r.localClient != nil && r.localClient.IsReady() {
+		switch cat {
+		case classify.CategorySentiment, classify.CategoryNER, classify.CategorySummarization:
+			prompts := fireworks.GetPrompts(cat.String(), t.Prompt)
+			localAns, err := r.localClient.GenerateAnswer(ctx, prompts.System, t.Prompt, prompts.MaxTokens)
+			if err == nil {
+				localAns = normalizeAnswer(localAns, cat)
+				if !isLowQualityAnswer(localAns) {
+					if valErr := validate.Validate(cat, localAns); valErr == nil {
+						log.Printf("[Task %s] Resolved: local model (%s)\n", t.TaskID, cat)
+						r.cache.Set(t.Prompt, localAns)
+						return task.Result{TaskID: t.TaskID, Answer: localAns, ResolutionPath: "local"}, nil
+					}
+				}
+			}
+			log.Printf("[Task %s] Local model failed for %s, falling back to Fireworks\n", t.TaskID, cat)
 		}
 	}
 
@@ -527,7 +539,7 @@ func normalizeAnswer(ans string, cat classify.Category) string {
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {
-	perTask := 160
+	perTask := 250
 	switch cat {
 	case classify.CategorySentiment:
 		perTask = 50
@@ -536,7 +548,7 @@ func getBatchMaxTokens(cat classify.Category, count int) int {
 	case classify.CategorySummarization:
 		perTask = 200
 	case classify.CategoryMath, classify.CategoryLogical:
-		perTask = 200
+		perTask = 350
 	case classify.CategoryCodeDebugging, classify.CategoryCodeGeneration:
 		perTask = 500
 	}

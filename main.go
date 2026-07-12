@@ -110,12 +110,6 @@ func run() error {
 				results[idx] = task.Result{TaskID: t.TaskID, Answer: res.Answer, ResolutionPath: "deterministic"}
 				resolved = true
 			}
-		case classify.CategorySentiment:
-			text := solvers.ExtractQuotedOrTail(t.Prompt)
-			if label, hits, confident := solvers.LexiconSentiment(text); confident {
-				results[idx] = task.Result{TaskID: t.TaskID, Answer: solvers.BuildSentimentAnswer(label, hits), ResolutionPath: "deterministic"}
-				resolved = true
-			}
 		case classify.CategoryCodeGeneration:
 			if code := solvers.LookupCodeTemplate(t.Prompt); code != "" {
 				if ok, _ := solvers.VerifyCode(ctx, code); ok {

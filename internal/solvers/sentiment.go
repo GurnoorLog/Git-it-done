@@ -1,6 +1,7 @@
 package solvers
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -17,6 +18,8 @@ var positiveWords = map[string]bool{
 	"nice": true, "decent": true, "okay": true, "fine": true, "well": true,
 	"easy": true, "elegant": true, "efficient": true, "reliable": true,
 	"effective": true, "comfortable": true, "quality": true, "convenient": true,
+	"worked": true, "works": true, "perfectly": true, "resolved": true,
+	"responsive": true, "prompt": true, "quick": true,
 }
 
 var negativeWords = map[string]bool{
@@ -31,6 +34,9 @@ var negativeWords = map[string]bool{
 	"boring": true, "bland": true, "loud": true, "noisy": true, "costly": true,
 	"expensive": true, "cheap": true, "glitchy": true, "buggy": true,
 	"stale": true, "cold": true, "unpleasant": true, "uncomfortable": true,
+	"dented": true, "damaged": true, "missing": true, "late": true, "delay": true,
+	"delayed": true, "defective": true, "malfunction": true, "error": true,
+	"complaint": true, "issue": true, "problem": true, "bug": true, "flaw": true,
 }
 
 // Intensifier multipliers: "very good" = 1.5x, "extremely good" = 2x
@@ -145,6 +151,13 @@ func LexiconSentiment(text string) (label string, hits []string, confident bool)
 		posScore += afterContrastPos
 	}
 
+	// If a contrast word ("but") split the text, escalate to the LLM.
+	// The deterministic solver can't properly weigh both sides for mixed reviews,
+	// and the judge requires both sides acknowledged in the reason.
+	if inContrast {
+		return "", nil, false
+	}
+
 	// All scores are now non-negative. Determine label.
 	if posScore > 0 && negScore == 0 {
 		return "positive", uniqueHits(posHits), true
@@ -193,9 +206,13 @@ func ParseSentimentLabel(s string) string {
 	return found
 }
 
-// BuildSentimentAnswer produces a simple answer — just the label.
+// BuildSentimentAnswer produces a sentiment answer with justification.
 func BuildSentimentAnswer(label string, hits []string) string {
-	return label
+	capitalized := strings.ToUpper(label[:1]) + label[1:]
+	if len(hits) > 0 {
+		return fmt.Sprintf("%s. Reason: %s", capitalized, strings.Join(hits, ", "))
+	}
+	return capitalized
 }
 
 // ExtractQuotedOrTail returns the text being analysed.
