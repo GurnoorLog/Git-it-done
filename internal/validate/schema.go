@@ -15,7 +15,7 @@ var reSentimentLabel = regexp.MustCompile(`(?i)\b(positive|negative|neutral|frus
 
 // reEntityPhrase matches at least one entity mention in the natural-language NER format.
 // e.g. "The text mentions Apple Inc. (organization)"
-var reEntityMention = regexp.MustCompile(`(?i)\((?:person|organization|location|company|place|individual)\)`)
+var reEntityMention = regexp.MustCompile(`(?i)\((?:person|organization|location|company|place|individual|date)\)`)
 
 // Validate checks whether a given response meets the hard schema requirements for its category.
 // Phase 4: sentiment and NER now expect natural-language sentences, not JSON.
@@ -49,7 +49,7 @@ func validateSentimentNL(answer string) error {
 	fields := strings.Fields(trimmed)
 	if len(fields) > 0 {
 		first := strings.ToLower(strings.Trim(fields[0], `.,;:!?`))
-		if first == "positive" || first == "negative" || first == "neutral" {
+		if first == "positive" || first == "negative" || first == "neutral" || first == "mixed" {
 			return nil
 		}
 	}
@@ -57,7 +57,7 @@ func validateSentimentNL(answer string) error {
 	if reSentimentLabel.MatchString(trimmed) {
 		return nil
 	}
-	return fmt.Errorf("sentiment answer must start with 'positive', 'negative', or 'neutral'; got: %q", trimmed)
+	return fmt.Errorf("sentiment answer must start with 'positive', 'negative', 'neutral', or 'mixed'; got: %q", trimmed)
 }
 
 // validateNERNL checks that the answer is a non-empty natural-language sentence

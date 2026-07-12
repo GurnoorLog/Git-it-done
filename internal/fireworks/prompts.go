@@ -26,20 +26,20 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 
 	case "sentiment":
 		return CategoryPrompt{
-			System: "Output '[Label]. [One-sentence justification].' Label: positive, negative, neutral. Be concise.",
+			System: "Output '[Label]. [One-sentence justification].' Label: positive, negative, neutral, or mixed. Be concise.",
 			MaxTokens: 60,
 		}
 
 	case "ner":
 		if wantsJSON {
 			return CategoryPrompt{
-				System:    "Extract entities as JSON: {\"persons\":[],\"organizations\":[],\"locations\":[]}. Exact spans. Omit empty. No other text.",
+				System:    "Extract entities as JSON: {\"persons\":[],\"organizations\":[],\"locations\":[],\"dates\":[]}. Exact spans. Omit empty. No other text.",
 				Prefill:   `{"persons":[`,
 				MaxTokens: 160,
 			}
 		}
 		return CategoryPrompt{
-			System: "List entities by type: persons, organizations, locations. Format 'Type: Name1, Name2'. Omit empty. Concise.",
+			System: "List entities by type: persons, organizations, locations, dates. Format 'Type: Name1, Name2'. Omit empty. Concise.",
 			MaxTokens: 200,
 		}
 
