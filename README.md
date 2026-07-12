@@ -1,4 +1,4 @@
-# Track 1 Agent - LABLAB HACL
+# Track 1 Agent - LABLAB HACk
 
 ## Overview
 This is a highly optimized, resource-aware routing agent for Hackathon Track 1. It dynamically processes tasks and routes them through a cost-efficiency hierarchy:
