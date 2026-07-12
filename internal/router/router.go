@@ -12,6 +12,7 @@ import (
 	"track1-agent/internal/cache"
 	"track1-agent/internal/classify"
 	"track1-agent/internal/fireworks"
+	"track1-agent/internal/local"
 	"track1-agent/internal/solvers"
 	"track1-agent/internal/task"
 	"track1-agent/internal/validate"
@@ -21,6 +22,11 @@ type Router struct {
 	fireworksClient *fireworks.Client
 	tierMap         fireworks.TierMap
 	cache           *cache.Cache
+	localClient     *local.Client
+}
+
+func (r *Router) SetLocalClient(lc *local.Client) {
+	r.localClient = lc
 }
 
 func New(fc *fireworks.Client, allowedModels []string) *Router {
@@ -95,8 +101,17 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 	}
 
 	prompts := fireworks.GetPrompts(cat.String(), t.Prompt)
-	basePrompt := fireworks.BuildPrompt(t.Prompt, extraContext)
+
+	// Compact prompt via local model (skip code to preserve details)
+	workPrompt := t.Prompt
 	isCode := cat == classify.CategoryCodeGeneration || cat == classify.CategoryCodeDebugging
+	if r.localClient != nil && r.localClient.IsReady() && !isCode {
+		if compacted, err := r.localClient.CompactPrompt(ctx, t.Prompt); err == nil && compacted != "" && len(compacted) < len(t.Prompt) {
+			log.Printf("[Task %s] Compacted prompt: %d → %d chars", t.TaskID, len(t.Prompt), len(compacted))
+			workPrompt = compacted
+		}
+	}
+	basePrompt := fireworks.BuildPrompt(workPrompt, extraContext)
 
 	var lastErr error
 	for _, targetModel := range fallbacks {
@@ -123,21 +138,47 @@ func (r *Router) resolveViaFireworks(ctx context.Context, t task.Task, cat class
 			ans = normalizeAnswer(ans, cat)
 		}
 
-		// If truncated, try to salvage before retrying
+		// If truncated, try local model to complete before retrying
 		if resp.Truncated {
-			// normalizeAnswer already ran above — check if it extracted a valid answer
-			if !isLowQualityAnswer(ans) && ans != "" {
-				log.Printf("[Task %s] Salvaged partial response from %s\n", t.TaskID, targetModel)
-			} else {
-				log.Printf("[Task %s] Length-truncated on %s, salvage failed (trying next)\n", t.TaskID, targetModel)
-				lastErr = fmt.Errorf("low quality after partial salvage: %q", ans)
-				continue
+			tryLocal := r.localClient != nil && r.localClient.IsReady() && !isCode
+			if tryLocal {
+				if localAns, err := r.localClient.GenerateAnswer(ctx, prompts.System, t.Prompt, prompts.MaxTokens); err == nil {
+					localAns = normalizeAnswer(localAns, cat)
+					if !isLowQualityAnswer(localAns) {
+						ans = localAns
+						resp.Truncated = false
+						log.Printf("[Task %s] Local model completed truncated response", t.TaskID)
+					}
+				}
+			}
+			if resp.Truncated {
+				if !isLowQualityAnswer(ans) && ans != "" {
+					log.Printf("[Task %s] Salvaged partial response from %s", t.TaskID, targetModel)
+				} else {
+					log.Printf("[Task %s] Length-truncated on %s, salvage failed (trying next)", t.TaskID, targetModel)
+					lastErr = fmt.Errorf("low quality after partial salvage: %q", ans)
+					continue
+				}
 			}
 		}
+		// Low quality: try local model before discarding
 		if isLowQualityAnswer(ans) {
-			log.Printf("[Task %s] Low-quality answer from %s (trying next)\n", t.TaskID, targetModel)
-			lastErr = fmt.Errorf("low quality answer: %q", ans)
-			continue
+			fallbackOK := false
+			if r.localClient != nil && r.localClient.IsReady() && !isCode {
+				if localAns, err := r.localClient.GenerateAnswer(ctx, prompts.System, t.Prompt, prompts.MaxTokens); err == nil {
+					localAns = normalizeAnswer(localAns, cat)
+					if !isLowQualityAnswer(localAns) {
+						ans = localAns
+						fallbackOK = true
+						log.Printf("[Task %s] Local model fallback replaced low-quality answer", t.TaskID)
+					}
+				}
+			}
+			if !fallbackOK {
+				log.Printf("[Task %s] Low-quality answer from %s (trying next)", t.TaskID, targetModel)
+				lastErr = fmt.Errorf("low quality answer: %q", ans)
+				continue
+			}
 		}
 
 		// Code verification + test cases
@@ -398,7 +439,7 @@ func (r *Router) Emergency(ctx context.Context, t task.Task) task.Result {
 			System:      "Answer the task directly and concisely. No preamble.",
 			Prompt:      t.Prompt,
 			Temperature: 0.0,
-			MaxTokens:   300,
+			MaxTokens:   250,
 		})
 		if err == nil && strings.TrimSpace(resp.Answer) != "" {
 			log.Printf("[Task %s] Resolved: emergency fireworks (model=%s)\n", t.TaskID, model)
@@ -486,18 +527,18 @@ func normalizeAnswer(ans string, cat classify.Category) string {
 }
 
 func getBatchMaxTokens(cat classify.Category, count int) int {
-	perTask := 200
+	perTask := 160
 	switch cat {
 	case classify.CategorySentiment:
-		perTask = 60
+		perTask = 50
 	case classify.CategoryNER:
-		perTask = 180
+		perTask = 150
 	case classify.CategorySummarization:
-		perTask = 250
+		perTask = 200
 	case classify.CategoryMath, classify.CategoryLogical:
-		perTask = 250
+		perTask = 200
 	case classify.CategoryCodeDebugging, classify.CategoryCodeGeneration:
-		perTask = 600
+		perTask = 500
 	}
 	return perTask * count
 }

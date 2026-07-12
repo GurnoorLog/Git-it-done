@@ -11,6 +11,7 @@ import (
 
 	"track1-agent/internal/classify"
 	"track1-agent/internal/fireworks"
+	"track1-agent/internal/local"
 	"track1-agent/internal/output"
 	"track1-agent/internal/router"
 	"track1-agent/internal/solvers"
@@ -53,6 +54,13 @@ func run() error {
 
 	fwClient := fireworks.NewClient(fwConfig)
 	taskRouter := router.New(fwClient, fwConfig.AllowedModels)
+
+	localClient := local.New()
+	if err := localClient.Start(context.Background()); err != nil {
+		log.Printf("Warning: local model not available: %v (continuing without)", err)
+	}
+	taskRouter.SetLocalClient(localClient)
+	defer localClient.Stop()
 
 	inPath := os.Getenv("INPUT_PATH")
 	if inPath == "" {

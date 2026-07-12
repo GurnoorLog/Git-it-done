@@ -21,13 +21,13 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 	case "math":
 		return CategoryPrompt{
 			System: "Solve concisely. Show steps then 'Final answer: X'. No markdown.",
-			MaxTokens: 300,
+			MaxTokens: 240,
 		}
 
 	case "sentiment":
 		return CategoryPrompt{
 			System: "Output '[Label]. [One-sentence justification].' Label: positive, negative, neutral. Be concise.",
-			MaxTokens: 80,
+			MaxTokens: 60,
 		}
 
 	case "ner":
@@ -35,48 +35,48 @@ func GetPrompts(category, taskPrompt string) CategoryPrompt {
 			return CategoryPrompt{
 				System:    "Extract entities as JSON: {\"persons\":[],\"organizations\":[],\"locations\":[]}. Exact spans. Omit empty. No other text.",
 				Prefill:   `{"persons":[`,
-				MaxTokens: 200,
+				MaxTokens: 160,
 			}
 		}
 		return CategoryPrompt{
 			System: "List entities by type: persons, organizations, locations. Format 'Type: Name1, Name2'. Omit empty. Concise.",
-			MaxTokens: 250,
+			MaxTokens: 200,
 		}
 
 	case "summarization":
 		return CategoryPrompt{
 			System: "Summarize concisely obeying any stated length constraint. Only facts from source. No preamble, no markdown.",
-			MaxTokens: 300,
+			MaxTokens: 240,
 		}
 
 	case "code_generation":
 		return CategoryPrompt{
 			System: "Write Python code. Handle all edge cases. Output ONLY code — no markdown fences, no explanation outside # comments. First line is code or #.",
-			MaxTokens: 800,
+			MaxTokens: 600,
 		}
 
 	case "code_debugging":
 		return CategoryPrompt{
 			System: "Fix the bug. Output ONLY valid Python code. Top line: '# BUG: ...'. Then corrected function. No markdown fences.",
-			MaxTokens: 800,
+			MaxTokens: 600,
 		}
 
 	case "logical":
 		return CategoryPrompt{
 			System: "Solve logically. Under 100 words. End with 'Answer: X'. No markdown.",
-			MaxTokens: 350,
+			MaxTokens: 270,
 		}
 
 	case "factual":
 		return CategoryPrompt{
 			System: "Answer directly and concisely. No hedging. No preamble. No markdown.",
-			MaxTokens: 300,
+			MaxTokens: 220,
 		}
 
 	default:
 		return CategoryPrompt{
 			System:    "Answer directly and concisely. No preamble, no markdown.",
-			MaxTokens: 300,
+			MaxTokens: 220,
 		}
 	}
 }
